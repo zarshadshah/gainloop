@@ -1,0 +1,3 @@
+# Netlify settings. There's no build step: the files are served exactly as they are.
+[build]
+  publish = "."

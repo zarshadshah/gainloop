@@ -1,0 +1,160 @@
+# Gainloop
+
+A phone-first web app for building muscle. You measure yourself with a soft tape, it sets targets from your frame, builds training for your equipment and meals that follow your food rules, then checks in every two weeks and adjusts, saying why each time.
+
+It's a Progressive Web App (PWA): a website that installs to your home screen, opens full screen and works offline. There's no build step and no server. Everything is plain HTML, CSS and JavaScript.
+
+---
+
+## What makes it different
+
+Most rows answer a gap found in recent reviews of Strongr Fastr, MeThreeSixty, ZOZOFIT and FitScan, Bodymapp's device limits, and critiques of muscle-potential calculators.
+
+| Gap in other apps | What Gainloop does |
+|---|---|
+| Measuring isn't connected to planning | Your tape measurements decide which muscles get extra sets. Each check-in re-plans from your new numbers. |
+| Measurements can't be trusted or corrected | You type exact numbers, edit or delete any entry, and get how-to-measure tips for each spot. The plan recalculates. |
+| Scanning is fiddly and needs a certain phone | A £3 soft tape, on any phone with a browser, on your own. |
+| Meal plans ignore food rules | Vegetarian, vegan, halal, allergies and dislikes are hard rules. You can see which meals were hidden and why, add your own meals, and get a shopping list. |
+| Built for weight loss, not muscle | Gain pace is set by training experience. Check-ins also watch your waist against your arms and chest to catch fat gain. |
+| Muscle-potential targets don't fit most people | Targets come from wrist, ankle and height, but your aim starts at 90% of them and lean mass is compared at your current body fat. Women get trend tracking rather than targets built from men's data. |
+| Paywalls and shifting prices | Free, no account, data stays on your device, with backups to a file. |
+| Plans change without explanation | Every change to calories or training is logged with the reason and the numbers behind it. |
+
+### Next
+
+- Accounts and sync, so your data follows you between devices
+- Reminders for weigh-ins and check-ins
+- Progress photos kept on your device
+- In the store app: weight from Apple Health or Health Connect
+
+---
+
+## Put it online (free)
+
+### Quickest: Netlify Drop
+
+1. Unzip `gainloop.zip` so you have a `gainloop` folder with `index.html` inside.
+2. Go to [app.netlify.com/drop](https://app.netlify.com/drop) and drag the `gainloop` folder onto the page.
+3. Log in or sign up to claim it. Until you do, the link sits behind a temporary password.
+4. New Netlify accounts make projects private by default. Open the project and press **Make public**, or go to **Project configuration → General → Visitor access → Project visibility**.
+5. Optional: on the project overview, choose **Customize → Manage project name and cover image** and rename it to get a link like `gainloop-yourname.netlify.app`.
+
+To update it later, drag the changed folder onto the drop zone on your project's **Deploys** page.
+
+### Better once you're editing: GitHub and Netlify
+
+1. Put the contents of this folder in a GitHub repository (create the repo, open it in Codespaces, copy the files in, commit and push).
+2. In Netlify: **Add new project → Import an existing project → GitHub**, pick the repository. Leave the build command empty and set the publish directory to the folder that holds `index.html` (`.` if it's the repo root).
+3. From then on, every `git push` goes live in about a minute.
+
+### Alternative: GitHub Pages
+
+In the repository's **Settings → Pages**, choose **Deploy from a branch**, pick `main` and the root folder. All paths are relative, so it works under `username.github.io/repo-name/`. On a free GitHub plan the repository has to be public. GitHub Pages ignores `_headers`, which is fine.
+
+---
+
+## Add it to your phone's home screen
+
+- **Android (Chrome):** open your link, then use the **Install** button on the You tab, or the menu **⋮ → Install app / Add to Home screen**.
+- **iPhone (Safari):** open your link, tap **Share → Add to Home Screen**.
+
+On iPhone the home-screen app keeps its own data, separate from Safari. Set up inside the home-screen app, or move data across with a backup and **Restore**.
+
+---
+
+## Your data
+
+- Everything is saved in the browser on that device (`localStorage`). Nothing is sent anywhere.
+- Clearing the site's data, or uninstalling the app, deletes it. Use **You → Download backup** (or **Copy backup**) now and then, and before you change phone.
+- Restore from **You → Restore** or from the welcome screen.
+- Data doesn't sync between devices yet. That's the next phase.
+
+---
+
+## Editing
+
+### Run it locally (Codespaces or any computer)
+
+ES modules don't load from `file://`, so serve the folder:
+
+```bash
+cd gainloop
+python3 -m http.server 8080
+```
+
+In Codespaces, open the forwarded port 8080. Edit a file, save, refresh.
+
+### What's where
+
+| File | What it does |
+|---|---|
+| `index.html` | Page shell. Loads the CSS and `js/app.js`. |
+| `css/app.css` | All styling. Colours are tokens at the top, with light and dark versions. |
+| `js/app.js` | Every screen, button and form. |
+| `js/calc.js` | The maths: body fat, frame targets, calories and the check-in rules. |
+| `js/plan.js` | Builds the training plan and progression advice. |
+| `js/meals.js` | Meal planner, portion scaling and shopping list. |
+| `js/engine.js` | Joins it up: setup, check-ins and the example data. |
+| `js/store.js` | Saving, backups and the example profile. |
+| `js/charts.js` | Tape gauges and the weight chart. |
+| `js/units.js` | cm/in, kg/stone/lb conversions. |
+| `js/util.js` | Small helpers: dates, formatting, escaping. |
+| `js/download.js` | Saves backup files. |
+| `js/data/exercises.js` | Exercise library. |
+| `js/data/foods.js` | Ingredients (per 100 g) and meals. |
+| `sw.js` | Offline support. |
+| `manifest.webmanifest`, `icons/` | Home-screen name, colours and icons. |
+| `_headers` | Netlify cache rules for the service worker and manifest. |
+| `fonts/` | Barlow and Barlow Condensed, self-hosted (SIL Open Font License). |
+
+### Common changes
+
+- **Add a meal:** copy an entry in `MEALS` in `js/data/foods.js`. `items` are `[ingredientId, grams]` pairs using ids from `INGREDIENTS`. The planner scales portions to your calories, so pick normal amounts.
+- **Add an ingredient:** add it to `INGREDIENTS` with per-100 g `kcal`, `p`, `c`, `f`, a `shop` group and the flags the diet rules check: `meat: 'chicken'` (or `'beef'`, `'lamb'`, `'pork'`), `fish`, `dairy`, `egg`, `gluten`, `nuts`, `soy`, `sesame`, `honey`, `alcohol`. A missing flag means a rule can't catch it, so be thorough.
+- **Add an exercise:** copy an entry in `EXERCISES` in `js/data/exercises.js`. `m` is the muscle, `k` is `c` (compound) or `i` (isolation), `eq` lists the equipment it suits, `rr` is the rep range and `step` the weight jump in kg.
+- **Change the calorie rules:** `calorieDecision()` in `js/calc.js`. The same rules are explained on the How the numbers work screen in `js/app.js`, so update both.
+- **Change colours or fonts:** the tokens at the top of `css/app.css`.
+
+### When you add a file
+
+Add its path to `SHELL` in `sw.js` so it works offline. When you ship a big change, bump `CACHE` (for example `gainloop-v2`) so old copies are cleared. Online users always get the newest files anyway, because the service worker checks the network first.
+
+---
+
+## Turning it into a store app
+
+The plan is to keep one codebase and grow it in phases.
+
+1. **Now: the web app.** Use it yourself and with a few friends. Fix whatever confuses people before adding features.
+2. **Accounts and sync.** Add Supabase (free tier): sign-in, then save the same state object per user so it follows you between phone and laptop. Later, split it into proper tables.
+3. **Reminders.** Web push works for installed web apps on Android, and on iPhone (iOS 16.4 or later) once the app is on the home screen.
+4. **Store apps with Capacitor.** Capacitor wraps these same files in a native shell and adds native features.
+   - **Google Play:** a one-time $25 developer registration. New personal accounts must run a closed test with at least 12 testers for 14 days before the app can go public.
+   - **App Store:** the Apple Developer Program is $99 a year, and building needs a Mac or a cloud build service.
+   - Apple's guideline 4.2 rejects apps that are only a website in a wrapper, so add native value first: Apple Health and Health Connect weight sync, notifications, widgets.
+
+---
+
+## Where the numbers come from
+
+- **Frame targets:** Casey Butt's formulas for maximum lean mass and body-part sizes from height, wrist and ankle. Upper estimates for drug-free lifters at about 8 to 10% body fat, built from men's data.
+- **Body fat from the tape:** US Navy method (Hodgdon and Beckett).
+- **Calories:** Mifflin-St Jeor equation (1990), adjusted for activity and training days, then corrected at each check-in from your real weight trend.
+- **FFMI:** fat-free mass index, normalised to 1.8 m.
+- **Training:** weekly sets by experience, fitted to your days and session length; double progression.
+
+Gainloop gives general fitness guidance, not medical advice.
+
+### Sources
+
+- [Casey Butt lean mass calculator](https://weighttraining.nz/cb_calculator.php)
+- [Menno Henselmans on FFMI and the formula's limits](https://mennohenselmans.com/ffmi-calculator/)
+- [Mifflin-St Jeor equation (1990)](https://pubmed.ncbi.nlm.nih.gov/2305711/)
+- [Netlify Drop quickstart](https://docs.netlify.com/start/quickstarts/netlify-drop-quickstart/)
+- [Netlify project visibility](https://docs.netlify.com/manage/security/secure-access-to-sites/project-visibility/)
+- [Netlify: change a project name](https://docs.netlify.com/manage/projects/customize-project-name-and-cover-image/)
+- [Netlify: deploy from a Git repository](https://docs.netlify.com/start/quickstarts/deploy-from-repository/)
+- [Google Play testing requirements for new personal accounts](https://support.google.com/googleplay/android-developer/answer/14151465?hl=en)
+- [Capacitor](https://capacitorjs.com/)
+- [Barlow typeface](https://github.com/jpt/barlow)
