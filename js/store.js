@@ -61,6 +61,10 @@ export function loadState() {
   }
 }
 
+// Exercises that were replaced: saved lists point at the new ones
+const RENAMED = { 'prone-y': 'superman', 'towel-wring': 'wrist-roller' };
+const renameEx = (id) => RENAMED[id] || id;
+
 export function migrate(s) {
   const base = blankState();
   const out = { ...base, ...s };
@@ -68,6 +72,8 @@ export function migrate(s) {
   for (const k of ['weights', 'measures', 'pins', 'sessionsDone', 'customMeals', 'changes', 'checkins', 'myExercises', 'customExercises']) if (!Array.isArray(out[k])) out[k] = [];
   for (const k of ['swaps', 'exLog', 'drafts', 'shopTicks']) if (!out[k] || typeof out[k] !== 'object') out[k] = {};
   if (!out.pantry || !Array.isArray(out.pantry.have)) out.pantry = { have: [] };
+  out.myExercises = [...new Set(out.myExercises.map(renameEx))];
+  out.swaps = Object.fromEntries(Object.entries(out.swaps).map(([k, v]) => [renameEx(k), renameEx(v)]));
   if (out.profile) out.profile = { ...out.profile, health: normHealth(out.profile.health) };
   return out;
 }

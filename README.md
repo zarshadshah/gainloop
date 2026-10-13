@@ -1,6 +1,6 @@
 # Gainloop
 
-A phone-first web app for building muscle. You measure yourself with a soft tape, it sets targets from your frame, builds training around your equipment and the exercises you already do, and plans meals that follow your food rules and health conditions. Every exercise has an animated how-to with the kit you need, and you can get meal ideas from the food you have. It checks in every two weeks and adjusts, saying why each time.
+A phone-first web app for building muscle. You measure yourself with a soft tape, it sets targets from your frame, builds training around your equipment and the exercises you already do, and plans meals that follow your food rules and health conditions. Every exercise has illustrated how-to pictures with the kit you need, and you can get meal ideas from the food you have. It checks in every two weeks and adjusts, saying why each time.
 
 It's a Progressive Web App (PWA): a website that installs to your home screen, opens full screen and works offline. There's no build step and no server. Everything is plain HTML, CSS and JavaScript.
 
@@ -20,7 +20,7 @@ Most rows answer a gap found in recent reviews of Strongr Fastr, MeThreeSixty, Z
 | Muscle-potential targets don't fit most people | Targets come from wrist, ankle and height, but your aim starts at 90% of them and lean mass is compared at your current body fat. Women get trend tracking rather than targets built from men's data. |
 | Paywalls and shifting prices | Free, no account, data stays on your device, with backups to a file. |
 | Plans change without explanation | Every change to calories or training is logged with the reason and the numbers behind it. |
-| Beginners don't know how to do the moves | Every exercise has a looping animated figure, the kit you need and three plain steps. The animations are drawn in code, so they work offline and in light or dark mode. |
+| Beginners don't know how to do the moves | Every exercise has illustrations of the start and end of the move, switching back and forth, plus the kit you need and three plain steps. Pictures for your sessions are kept on the phone, so they show at the gym without signal. |
 | Generated plans throw away what you already do | Tell it the exercises you do now (any name: "bench", "RDL", "pull-ups") and the plan keeps them, building the rest around them. Anything it can't fit comes with a reason. |
 | Meal plans assume a big shop | Tick the food you have and get meals made from it, sized to your calories, plus recipes you're one or two items short of. Use one for any day with a tap. |
 | Health conditions are ignored | Diabetes (type 1, type 2, prediabetes), high blood pressure, heart and kidney conditions, coeliac disease, high cholesterol, asthma and joint pain change the meals, rep ranges and exercise choices, with safety notes. |
@@ -105,7 +105,6 @@ In Codespaces, open the forwarded port 8080. Edit a file, save, refresh.
 | `js/pantry.js` | "Cook with what you have": meal ideas from the foods you tick. |
 | `js/health.js` | Health conditions: what each one changes and its safety notes. |
 | `js/search.js` | Exercise search that understands gym names like "RDL" or "pull ups". |
-| `js/anim.js` | Draws and animates the exercise figures (SVG, no images). |
 | `js/engine.js` | Joins it up: setup, check-ins and the example data. |
 | `js/store.js` | Saving, backups and the example profile. |
 | `js/charts.js` | Tape gauges and the weight chart. |
@@ -114,7 +113,8 @@ In Codespaces, open the forwarded port 8080. Edit a file, save, refresh.
 | `js/download.js` | Saves backup files. |
 | `js/data/exercises.js` | Exercise library. |
 | `js/data/guides.js` | For each exercise: the kit, three how-to steps, other muscles worked and other names people use. |
-| `js/data/poses.js` | The movement for each exercise's animation. |
+| `js/data/pictures.js` | Which pictures in `img/ex/` go with each exercise. |
+| `img/ex/` | Exercise pictures: the start and end of each move, plus small thumbnails in `t/`. |
 | `js/data/foods.js` | Ingredients (per 100 g) and meals. |
 | `sw.js` | Offline support. |
 | `manifest.webmanifest`, `icons/` | Home-screen name, colours and icons. |
@@ -125,7 +125,7 @@ In Codespaces, open the forwarded port 8080. Edit a file, save, refresh.
 
 - **Add a meal:** copy an entry in `MEALS` in `js/data/foods.js`. `items` are `[ingredientId, grams]` pairs using ids from `INGREDIENTS`. The planner scales portions to your calories, so pick normal amounts.
 - **Add an ingredient:** add it to `INGREDIENTS` with per-100 g `kcal`, `p`, `c`, `f`, a `shop` group and the flags the diet rules check: `meat: 'chicken'` (or `'beef'`, `'lamb'`, `'pork'`), `fish`, `dairy`, `egg`, `gluten`, `nuts`, `soy`, `sesame`, `honey`, `alcohol`. A missing flag means a rule can't catch it, so be thorough.
-- **Add an exercise:** copy an entry in `EXERCISES` in `js/data/exercises.js`. `m` is the muscle, `k` is `c` (compound) or `i` (isolation), `eq` lists the equipment it suits, `rr` is the rep range and `step` the weight jump in kg. Add `auto: false` if the planner should only use it for people who already do it. Then give it a guide in `js/data/guides.js` and an animation in `SPECS` in `js/data/poses.js`, usually by reusing a movement pattern with different options. Without those it still works, it just shows no animation.
+- **Add an exercise:** copy an entry in `EXERCISES` in `js/data/exercises.js`. `m` is the muscle, `k` is `c` (compound) or `i` (isolation), `eq` lists the equipment it suits, `rr` is the rep range and `step` the weight jump in kg. Add `auto: false` if the planner should only use it for people who already do it. Then give it a guide in `js/data/guides.js` and pictures in `js/data/pictures.js` (copy two pictures into `img/ex/` named `<name>-1.webp` and `<name>-2.webp`, and a small one into `img/ex/t/<name>.webp`). Without pictures it still works, it just shows the steps.
 - **Change a health rule:** `healthRules()` in `js/health.js` decides what each condition changes, and `STRESS` lists the exercises left out for each sore joint. The How the numbers work screen in `js/app.js` explains them, so update both.
 - **Change the calorie rules:** `calorieDecision()` in `js/calc.js`. The same rules are explained on the How the numbers work screen in `js/app.js`, so update both.
 - **Change colours or fonts:** the tokens at the top of `css/app.css`.
@@ -169,6 +169,7 @@ Gainloop gives general fitness guidance, not medical advice. Anyone with a healt
 - [Key points from the American Diabetes Association's exercise guidance](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5317029/)
 - [American Heart Association: resistance training with and without heart disease (2023)](https://professional.heart.org/en/science-news/resistance-exercise-training-in-individuals-with-and-without-cardiovascular-disease-2023-update)
 - [KDIGO 2024 guideline for chronic kidney disease](https://kdigo.org/guidelines/ckd-evaluation-and-management/)
+- Exercise data by [RepDB](https://repdb.co): the exercise illustrations come from RepDB's free tier, which allows use inside apps as long as this credit stays visible (it's also on the You screen). The pictures can't be republished as a dataset.
 - [Netlify Drop quickstart](https://docs.netlify.com/start/quickstarts/netlify-drop-quickstart/)
 - [Netlify project visibility](https://docs.netlify.com/manage/security/secure-access-to-sites/project-visibility/)
 - [Netlify: change a project name](https://docs.netlify.com/manage/projects/customize-project-name-and-cover-image/)

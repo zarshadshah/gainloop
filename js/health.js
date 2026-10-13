@@ -28,7 +28,7 @@ export const PAIN = [
 // Exercises that tend to load a sore area. They're left out when there is another option for that muscle.
 export const STRESS = {
   knee: ['squat', 'hack-squat', 'split-squat', 'reverse-lunge', 'box-pistol', 'leg-ext', 'nordic'],
-  back: ['deadlift', 'rdl', 'db-rdl', 'bb-row', 'backpack-row', 'squat', 'kb-swing', 'ohp', 'standing-calf'],
+  back: ['deadlift', 'rdl', 'db-rdl', 'bb-row', 'backpack-row', 'squat', 'kb-swing', 'ohp', 'standing-calf', 'superman'],
   shoulder: ['dips', 'bench', 'incline-bench', 'cg-bench', 'ohp', 'db-press', 'pike-push-up', 'feet-up-pike', 'bench-dip', 'db-pullover', 'deficit-push-up'],
 };
 

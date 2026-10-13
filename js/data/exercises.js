@@ -30,7 +30,7 @@ export const EXERCISES = [
   { id: 'db-fly', name: 'Dumbbell fly', m: 'chest', k: 'i', eq: ['gym', 'home'], load: 'kg', rr: [10, 15], step: 2, cue: 'Lower in a wide arc until you feel a stretch across your chest, no further.' },
   { id: 'push-up', name: 'Push-up', m: 'chest', k: 'c', eq: ['home', 'bw'], load: 'bw', rr: [8, 20], next: 'feet-up-push-up', cue: 'Body in one straight line, lower your chest to just above the floor.' },
   { id: 'feet-up-push-up', name: 'Feet-elevated push-up', m: 'chest', k: 'c', eq: ['home', 'bw'], load: 'bw', rr: [6, 15], next: 'deficit-push-up', cue: 'Feet on a chair or sofa. Keep your hips from sagging.' },
-  { id: 'deficit-push-up', name: 'Deficit push-up', m: 'chest', k: 'c', eq: ['home', 'bw'], load: 'bw', rr: [6, 15], cue: 'Hands on two sturdy books so your chest can sink lower than your hands.' },
+  { id: 'deficit-push-up', name: 'Deficit push-up', m: 'chest', k: 'c', eq: ['home', 'bw'], load: 'bw', rr: [6, 15], cue: 'Hands on two sturdy blocks or plates so your chest can sink lower than your hands.' },
   { id: 'dips', name: 'Dips', m: 'chest', k: 'c', eq: ['gym'], load: 'bw', rr: [6, 12], cue: 'Lean forward slightly and lower until your upper arms are about level with the floor.' },
 
   // Back
@@ -41,8 +41,8 @@ export const EXERCISES = [
   { id: 'bb-row', name: 'Barbell row', m: 'back', k: 'c', eq: ['gym'], load: 'kg', rr: [6, 10], step: 2.5, heavy: true, cue: 'Hinge to about 45 degrees with a flat back and row to your lower ribs.' },
   { id: 'pull-up', name: 'Pull-up', m: 'back', k: 'c', eq: ['gym', 'home', 'bw'], bar: true, load: 'bw', rr: [4, 12], cue: 'Start from a dead hang and pull until your chin clears the bar. Use the assisted machine if you need it.' },
   { id: 'backpack-row', name: 'Backpack row', m: 'back', k: 'c', eq: ['bw'], load: 'kg', rr: [10, 15], step: 1, cue: 'Load a backpack, hinge forward with a flat back and row it to your stomach.' },
-  { id: 'prone-y', name: 'Prone Y-raise', m: 'back', k: 'i', eq: ['home', 'bw'], load: 'bw', rr: [10, 15], cue: 'Lie face down, lift straight arms into a Y and hold for a second at the top.' },
-  { id: 'db-pullover', name: 'Dumbbell pullover', m: 'back', k: 'i', eq: ['gym', 'home'], load: 'kg', rr: [10, 15], step: 2, cue: 'Lie across a bench and lower the dumbbell behind your head with slightly bent arms.' },
+  { id: 'superman', name: 'Superman', m: 'back', k: 'i', eq: ['home', 'bw'], load: 'bw', rr: [10, 15], cue: 'Lift your arms, chest and legs together and hold for a second at the top.' },
+  { id: 'db-pullover', name: 'Dumbbell pullover', m: 'back', k: 'i', eq: ['gym', 'home'], load: 'kg', rr: [10, 15], step: 2, cue: 'Lie on a bench and lower the dumbbell behind your head with slightly bent arms.' },
   { id: 'straight-arm', name: 'Straight-arm pulldown', m: 'back', k: 'i', eq: ['gym'], load: 'kg', rr: [10, 15], step: 2.5, cue: 'Arms nearly straight, sweep the bar down to your thighs.' },
 
   // Shoulders
@@ -113,9 +113,9 @@ export const EXERCISES = [
   // Forearms
   { id: 'wrist-curl', name: 'Dumbbell wrist curl', m: 'forearms', k: 'i', eq: ['gym', 'home'], load: 'kg', rr: [12, 20], step: 1, cue: 'Forearms on your thighs, let the dumbbell roll to your fingertips, curl it back up.' },
   { id: 'reverse-curl', name: 'Reverse curl', m: 'forearms', k: 'i', eq: ['gym', 'home'], load: 'kg', rr: [10, 15], step: 2, cue: 'Palms facing down, curl up with your wrists straight.' },
-  { id: 'farmer-hold', name: "Farmer's hold", m: 'forearms', k: 'i', eq: ['gym', 'home'], load: 's', rr: [30, 60], cue: 'Hold heavy dumbbells at your sides and stand tall.' },
+  { id: 'farmer-hold', name: "Farmer's walk", m: 'forearms', k: 'i', eq: ['gym', 'home'], load: 's', rr: [30, 60], cue: 'Heavy dumbbells at your sides, stand tall and walk with short steps. No space? Stand still and hold.' },
   { id: 'dead-hang', name: 'Dead hang', m: 'forearms', k: 'i', eq: ['gym', 'home', 'bw'], bar: true, load: 's', rr: [20, 60], cue: 'Hang from the bar with straight arms and a strong grip.' },
-  { id: 'towel-wring', name: 'Towel wring', m: 'forearms', k: 'i', eq: ['bw'], load: 's', rr: [20, 40], cue: 'Roll up a towel and wring it as hard as you can, then switch direction.' },
+  { id: 'wrist-roller', name: 'Wrist roller', m: 'forearms', k: 'i', eq: ['gym', 'home', 'bw'], load: 'bw', rr: [3, 6], cue: 'Arms straight out in front, wind the weight all the way up, then lower it slowly.' },
 
   // Common gym exercises the planner doesn't pick on its own, kept so your plan can include the ones you already do
   { id: 'incline-bench', name: 'Incline barbell bench press', m: 'chest', k: 'c', eq: ['gym'], load: 'kg', rr: [6, 10], step: 2.5, heavy: true, auto: false, cue: 'Bench at about 30 degrees. Lower the bar to your upper chest.' },

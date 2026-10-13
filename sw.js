@@ -1,7 +1,7 @@
 // Gainloop service worker.
 // Network first: when you're online you always get the latest files you deployed,
 // and a copy is kept so the app still opens offline.
-const CACHE = 'gainloop-v2';
+const CACHE = 'gainloop-v3';
 
 const SHELL = [
   './',
@@ -18,14 +18,13 @@ const SHELL = [
   './js/store.js',
   './js/charts.js',
   './js/download.js',
-  './js/anim.js',
   './js/health.js',
   './js/search.js',
   './js/pantry.js',
   './js/data/exercises.js',
   './js/data/foods.js',
   './js/data/guides.js',
-  './js/data/poses.js',
+  './js/data/pictures.js',
   './fonts/barlow-latin-400-normal.woff2',
   './fonts/barlow-latin-500-normal.woff2',
   './fonts/barlow-latin-600-normal.woff2',
@@ -77,6 +76,24 @@ async function networkFirst(request) {
     return Response.error();
   }
 }
+
+// The app asks for exercise pictures to be kept for offline use (see warmPictures in app.js)
+self.addEventListener('message', (event) => {
+  const { type, urls } = event.data || {};
+  if (type !== 'warm' || !Array.isArray(urls)) return;
+  event.waitUntil(
+    caches.open(CACHE).then(async (cache) => {
+      for (const url of urls.slice(0, 400)) {
+        if (typeof url !== 'string' || !url.startsWith('img/')) continue;
+        try {
+          if (!(await cache.match(url))) await cache.add(url);
+        } catch {
+          // offline or missing: it's fetched normally next time
+        }
+      }
+    }),
+  );
+});
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;

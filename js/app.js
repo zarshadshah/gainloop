@@ -6,8 +6,7 @@ import * as C from './calc.js';
 import { MUSCLES, allExercises, customExercises, exerciseById, muscleName, setCustomExercises } from './data/exercises.js';
 import { AVOID_OPTIONS, INGREDIENTS, SLOTS } from './data/foods.js';
 import { GUIDES } from './data/guides.js';
-import { PATTERNS, SPECS } from './data/poses.js';
-import { hasAnimation, mountAnimation, poseSVG, registerPoses } from './anim.js';
+import { PICTURE_CREDIT, PICTURE_CREDIT_URL, frameSrcs, pictureFor, thumbSrc } from './data/pictures.js';
 import { CONDITIONS, DIABETES, PAIN, STRESS, blankHealth, hasHealth, healthSummary, normHealth, repRange } from './health.js';
 import { namesMatch, searchExercises } from './search.js';
 import { matchRecipes, mealIdeas, pickableIngredients } from './pantry.js';
@@ -20,18 +19,26 @@ import { drawWeightChart, tapeHTML } from './charts.js';
 const PREVIEW = typeof window !== 'undefined' && !!window.GAINLOOP_PREVIEW;
 const today = () => isoDate();
 
-registerPoses(SPECS, PATTERNS);
-
 let S = loadState();
-const ui = { setup: null, checkin: null, eatDay: weekdayIndex(isoDate()), sheet: null, installEvent: null, lastRoute: '', copyText: '', anim: null, libFilter: 'all', libQuery: '', ideas: new Map() };
+const ui = { setup: null, checkin: null, eatDay: weekdayIndex(isoDate()), sheet: null, installEvent: null, lastRoute: '', copyText: '', picPaused: false, libFilter: 'all', libQuery: '', ideas: new Map() };
 const rules = () => rulesOf(S);
 const reduceMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-// Small still picture of an exercise (its turnaround point). The drawing only depends on the exercise, so keep it.
-const thumbCache = new Map();
+// Small picture of an exercise for lists
 function thumb(exId) {
-  if (!hasAnimation(exId)) return '<span class="thumb thumb-none">Your own</span>';
-  if (!thumbCache.has(exId)) thumbCache.set(exId, `<span class="thumb">${poseSVG(exId, 1)}</span>`);
-  return thumbCache.get(exId);
+  const p = pictureFor(exId);
+  if (!p) return '<span class="thumb thumb-none">Your own</span>';
+  return `<span class="thumb"><img src="${thumbSrc(p)}" alt="" width="60" height="60" loading="lazy" decoding="async"></span>`;
+}
+
+// The how-to pictures: the start and end of the move, switching back and forth.
+// Side by side when motion is turned down or the two were drawn from different angles; one picture for holds.
+function pictureStage(ex) {
+  const p = pictureFor(ex.id);
+  if (!p) return '<div class="pic pic-none"><p>There’s no picture for exercises you add yourself. The video link below shows how others do it.</p></div>';
+  const mode = p.mode === 'still' ? 'still' : p.mode === 'pair' || reduceMotion() ? 'pair' : 'loop';
+  const label = mode === 'still' ? `Picture of ${lcFirst(ex.name)}` : `Pictures of the start and end of ${lcFirst(ex.name)}`;
+  const frames = frameSrcs(p).map((src, i) => `<img class="pic-frame pic-f${i + 1}${p.flip === i + 1 ? ' flip' : ''}" src="${src}" alt="" decoding="async">`).join('');
+  return `<figure class="pic pic-${mode}${mode === 'loop' && ui.picPaused ? ' paused' : ''}" role="img" aria-label="${esc(label)}">${frames}</figure>`;
 }
 // What an exercise needs, in a few words ('No equipment' rather than 'Nothing')
 function kitText(exId, first = false) {
@@ -987,7 +994,8 @@ function youView() {
     <section class="section">
       <button class="btn btn-danger" data-act="reset">Delete all my data</button>
     </section>
-    <p class="fine footer-note">Gainloop ${APP_VERSION}. Not medical advice. If you have a health condition or are under 18, check with a doctor or a qualified coach before changing your diet or training.</p>`;
+    <p class="fine footer-note">Gainloop ${APP_VERSION}. Not medical advice. If you have a health condition or are under 18, check with a doctor or a qualified coach before changing your diet or training.</p>
+    <p class="fine">Exercise pictures: <a href="${PICTURE_CREDIT_URL}" target="_blank" rel="noopener">${PICTURE_CREDIT}</a>.</p>`;
 }
 
 function restoreView() {
@@ -1121,15 +1129,15 @@ function guideSheet(sh) {
   const mine = (S.myExercises || []).includes(ex.id);
   const sore = soreFor(ex.id);
   const fromSwap = sh.back?.type === 'swap' ? sh.back : null;
-  const stage = hasAnimation(ex.id)
-    ? `<div class="anim-stage" role="img" aria-label="Animated figure doing ${esc(lcFirst(ex.name))}"><div class="anim-host" data-anim="${ex.id}"></div></div>`
-    : '<div class="anim-stage anim-none"><p>There’s no animation for exercises you add yourself. The video link below shows how others do it.</p></div>';
+  const pic = pictureFor(ex.id);
+  const looping = pic && pic.mode !== 'still' && pic.mode !== 'pair' && !reduceMotion();
   const actions = fromSwap
     ? `<button class="btn btn-primary" data-act="swap-to" data-from="${fromSwap.ex}" data-to="${ex.id}">Use this instead</button>
        <button class="btn" data-act="sheet-back">Back to the list</button>`
     : (S.profile ? `<button class="btn" data-act="mine-toggle" data-id="${ex.id}">${mine ? 'Remove from exercises I already do' : 'Add to exercises I already do'}</button>` : '');
-  return `<div class="guide">${stage}
-    <div class="guide-bar"><p class="guide-meta"><span>${repText(ex, rr)}</span><span>${restText(ex)}</span></p>${hasAnimation(ex.id) ? `<button class="anim-toggle" data-act="anim-toggle">${reduceMotion() ? 'Play' : 'Pause'}</button>` : ''}</div>
+  return `<div class="guide">${pictureStage(ex)}
+    ${pic?.note ? `<p class="pic-note">${esc(pic.note)}</p>` : ''}
+    <div class="guide-bar"><p class="guide-meta"><span>${repText(ex, rr)}</span><span>${restText(ex)}</span></p>${looping ? `<button class="pic-toggle" data-act="pic-toggle" aria-pressed="${ui.picPaused}">${ui.picPaused ? 'Play' : 'Pause'}</button>` : ''}</div>
     <p class="guide-works">Works your ${muscleName(ex.m).toLowerCase()}${also.length ? `, plus your ${andList(also)}` : ''}.</p>
     ${sore.length ? `<p class="note">${I.alert} You said your ${andList(sore)} ${hurtVerb(sore)}. This one can load ${sorePlural(sore) ? 'them' : 'it'}, so go lighter, or swap it for something else if it hurts.</p>` : ''}
     ${g ? `<h3 class="h3">You’ll need</h3><ul class="kit-list">${g.kit.map((k) => `<li>${esc(k)}</li>`).join('')}</ul>
@@ -1139,6 +1147,7 @@ function guideSheet(sh) {
       ${actions}
       <a class="btn-link" href="https://www.youtube.com/results?search_query=${encodeURIComponent(`how to do ${ex.name}`)}" target="_blank" rel="noopener">Watch videos of it on YouTube</a>
     </div>
+    ${pic ? `<p class="fine pic-credit">Pictures: <a href="${PICTURE_CREDIT_URL}" target="_blank" rel="noopener">RepDB (repdb.co)</a></p>` : ''}
   </div>`;
 }
 
@@ -1431,6 +1440,7 @@ function render() {
     document.title = r.name === 'welcome' || !h1 ? 'Gainloop' : `${h1.textContent.trim()} – Gainloop`;
   }
   drawCharts();
+  warmPictures();
   if (r.name === 'pantry') watchPantryBar();
   else { pantryIO?.disconnect(); pantryIO = null; }
   renderSheet();
@@ -1461,16 +1471,10 @@ function closeSheet() {
   renderSheet();
 }
 
-function stopAnimation() {
-  ui.anim?.destroy();
-  ui.anim = null;
-}
-
 function renderSheet() {
   const root = document.getElementById('sheet-root');
   if (!root) return;
   const sh = ui.sheet;
-  stopAnimation();
   document.documentElement.classList.toggle('sheet-open', !!sh);
   if (!sh) { root.innerHTML = ''; return; }
   // keep the scroll position when the same sheet is drawn again (after a toggle, say)
@@ -1483,12 +1487,6 @@ function renderSheet() {
     </section>`;
   const sheet = root.querySelector('.sheet');
   if (keepScroll) sheet.scrollTop = keepScroll;
-  const stage = sheet.querySelector('[data-anim]');
-  if (stage) {
-    ui.anim = mountAnimation(stage, stage.dataset.anim, { autoplay: !reduceMotion() });
-    const btn = sheet.querySelector('[data-act="anim-toggle"]');
-    if (btn && ui.anim) btn.textContent = ui.anim.playing ? 'Pause' : 'Play';
-  }
 }
 
 const sheetKey = (sh) => `${sh.type}:${sh.ex ?? sh.i ?? ''}:${sh.mode || ''}`;
@@ -1786,11 +1784,12 @@ const ACTIONS = {
     ui.sheet = ui.sheet.back;
     renderSheet();
   },
-  'anim-toggle'(el) {
-    const a = ui.anim;
-    if (!a) return;
-    if (a.playing) a.pause(); else a.play();
-    el.textContent = a.playing ? 'Pause' : 'Play';
+  'pic-toggle'(el) {
+    // remembered while the app is open, so the next exercise you look at stays paused too
+    ui.picPaused = !ui.picPaused;
+    el.closest('.guide')?.querySelector('.pic-loop')?.classList.toggle('paused', ui.picPaused);
+    el.textContent = ui.picPaused ? 'Play' : 'Pause';
+    el.setAttribute('aria-pressed', String(ui.picPaused));
   },
   'mine-toggle'(el) {
     const id = el.dataset.id;
@@ -2195,8 +2194,40 @@ function wire() {
   window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
 }
 
+// A plan saved by an older version may name exercises that have since been replaced: rebuild it
+function repairProgram() {
+  if (!S.profile || !S.program) return;
+  syncCustoms();
+  if (S.program.sessions.some((s) => s.slots.some((sl) => !exerciseById(sl.ex)))) {
+    refreshProgram(S);
+    save();
+  }
+}
+
+// Ask the service worker to keep the pictures you'll need (every thumbnail, plus the full pictures for your
+// sessions and your own exercises), so they show at the gym without signal. Only when that list changes.
+let warmKey = '';
+function warmPictures() {
+  if (PREVIEW || !S.program || !('serviceWorker' in navigator)) return;
+  const ids = new Set([...S.program.sessions.flatMap((s) => s.slots.map((sl) => sl.ex)), ...(S.myExercises || [])]);
+  const key = [...ids].sort().join(',');
+  if (key === warmKey) return;
+  warmKey = key;
+  const urls = new Set();
+  for (const e of allExercises()) {
+    const p = pictureFor(e.id);
+    if (p) urls.add(thumbSrc(p));
+  }
+  for (const id of ids) {
+    const p = pictureFor(id);
+    if (p) frameSrcs(p).forEach((u) => urls.add(u));
+  }
+  navigator.serviceWorker.ready.then((reg) => reg.active?.postMessage({ type: 'warm', urls: [...urls] })).catch(() => {});
+}
+
 function boot() {
   if (PREVIEW && !S.profile) S = seedDemo(today());
+  repairProgram();
   applyTheme();
   wire();
   render();
