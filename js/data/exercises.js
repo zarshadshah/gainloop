@@ -115,7 +115,7 @@ export const EXERCISES = [
   { id: 'reverse-curl', name: 'Reverse curl', m: 'forearms', k: 'i', eq: ['gym', 'home'], load: 'kg', rr: [10, 15], step: 2, cue: 'Palms facing down, curl up with your wrists straight.' },
   { id: 'farmer-hold', name: "Farmer's walk", m: 'forearms', k: 'i', eq: ['gym', 'home'], load: 's', rr: [30, 60], cue: 'Heavy dumbbells at your sides, stand tall and walk with short steps. No space? Stand still and hold.' },
   { id: 'dead-hang', name: 'Dead hang', m: 'forearms', k: 'i', eq: ['gym', 'home', 'bw'], bar: true, load: 's', rr: [20, 60], cue: 'Hang from the bar with straight arms and a strong grip.' },
-  { id: 'wrist-roller', name: 'Wrist roller', m: 'forearms', k: 'i', eq: ['gym', 'home', 'bw'], load: 'bw', rr: [3, 6], cue: 'Arms straight out in front, wind the weight all the way up, then lower it slowly.' },
+  { id: 'wrist-roller', name: 'Wrist roller', m: 'forearms', k: 'i', eq: ['gym', 'home', 'bw'], load: 'bw', rr: [3, 6], cue: 'Wind the weight all the way up, then lower it slowly. Holding your arms out straight makes it harder.' },
 
   // Common gym exercises the planner doesn't pick on its own, kept so your plan can include the ones you already do
   { id: 'incline-bench', name: 'Incline barbell bench press', m: 'chest', k: 'c', eq: ['gym'], load: 'kg', rr: [6, 10], step: 2.5, heavy: true, auto: false, cue: 'Bench at about 30 degrees. Lower the bar to your upper chest.' },
