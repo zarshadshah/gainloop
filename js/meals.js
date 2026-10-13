@@ -28,7 +28,7 @@ export function mealFlags(meal) {
 function addIngredientFlags(flags, ing) {
   if (!ing) return;
   if (ing.meat) { flags.add('meat'); flags.add(ing.meat); }
-  for (const f of ['fish', 'dairy', 'egg', 'gluten', 'nuts', 'soy', 'sesame', 'honey', 'pork', 'alcohol']) if (ing[f]) flags.add(f);
+  for (const f of ['fish', 'dairy', 'egg', 'gluten', 'nuts', 'soy', 'sesame', 'honey', 'pork', 'alcohol', 'sugar', 'shake']) if (ing[f]) flags.add(f);
 }
 
 export function mealMacros(meal) {
@@ -72,16 +72,49 @@ export function ruleBreaks(meal, diet) {
   return [...new Set(reasons)];
 }
 
-export function filterMeals(diet, customMeals = []) {
+// Grams of ingredients carrying a flag (for the 'cut back' health rules)
+function flagGrams(meal, flag) {
+  if (isCustom(meal)) return 0;
+  return meal.items.reduce((n, [id, g]) => n + (INGREDIENTS[id]?.[flag] ? g : 0), 0);
+}
+
+// Health rules: hard ones always apply; 'cut back' ones (salt, saturated fat) only while each meal slot keeps 3 options
+export function healthBreaks(meal, rules) {
+  if (!rules) return { hard: [], soft: [] };
+  const flags = mealFlags(meal);
+  const hard = [];
+  const soft = [];
+  if (rules.noSugar && flags.has('sugar')) hard.push('has added sugar');
+  if (rules.noShakes && flags.has('shake')) hard.push('protein shake');
+  if (rules.lowSalt && flagGrams(meal, 'salty') >= 30) soft.push('salty cheese');
+  if (rules.lowSatFat && flagGrams(meal, 'satfat') >= 40) soft.push('high in saturated fat');
+  return { hard, soft };
+}
+
+export function filterMeals(diet, customMeals = [], rules = null) {
   const allowed = [];
   const hidden = [];
+  const softOut = [];
   for (const meal of [...MEALS, ...customMeals]) {
     const reasons = ruleBreaks(meal, diet);
-    if (reasons.length) hidden.push({ meal, reasons });
+    const hb = healthBreaks(meal, rules);
+    if (reasons.length || hb.hard.length) hidden.push({ meal, reasons: [...reasons, ...hb.hard] });
+    else if (hb.soft.length) softOut.push({ meal, reasons: hb.soft });
     else allowed.push(meal);
+  }
+  // put 'cut back' meals back if a slot would otherwise run short
+  for (const x of softOut) {
+    const left = allowed.filter((m) => m.slot === x.meal.slot).length;
+    if (left < 3) allowed.push(x.meal);
+    else hidden.push(x);
   }
   return { allowed, hidden };
 }
+
+export const carbShare = (meal) => {
+  const m = mealMacros(meal);
+  return m.kcal ? (m.c * 4) / m.kcal : 0;
+};
 
 export const needsHalalNote = (meal, diet) => diet.halal && mealFlags(meal).has('meat');
 
@@ -120,12 +153,17 @@ const proteinDensity = (meal) => {
   return m.kcal ? m.p / m.kcal : 0;
 };
 
-function planDay(bySlot, targets, rand, counts, prevIds, byId) {
+function planDay(bySlot, targets, rand, counts, prevIds, byId, opts = {}) {
   const meals = [];
   const today = new Set();
   for (const slot of ['breakfast', 'lunch', 'dinner']) {
-    const list = bySlot[slot] || [];
+    let list = bySlot[slot] || [];
     if (!list.length) continue;
+    // carb-aware (diabetes): lean toward meals where carbs are no more than half the calories
+    if (opts.carbAware) {
+      const lower = list.filter((m) => carbShare(m) <= 0.5);
+      if (lower.length >= 2) list = lower;
+    }
     const m = pick(list, rand, counts, new Set([...prevIds, ...today]));
     meals.push({ slot, id: m.id });
     today.add(m.id);
@@ -172,7 +210,7 @@ function planDay(bySlot, targets, rand, counts, prevIds, byId) {
   return day;
 }
 
-export function planWeek(allowed, targets, seed, start) {
+export function planWeek(allowed, targets, seed, start, opts = {}) {
   const rand = rng(seed);
   const byId = new Map(allowed.map((m) => [m.id, m]));
   const bySlot = {};
@@ -181,7 +219,7 @@ export function planWeek(allowed, targets, seed, start) {
   const days = [];
   for (let i = 0; i < 7; i += 1) {
     const prev = days[i - 1] ? new Set(days[i - 1].meals.filter((e) => e.slot !== 'snack').map((e) => e.id)) : new Set();
-    days.push(planDay(bySlot, targets, rand, counts, prev, byId));
+    days.push(planDay(bySlot, targets, rand, counts, prev, byId, opts));
   }
   return { seed, start, days };
 }
@@ -213,10 +251,11 @@ export function amountText(ingId, grams) {
     const whole = Math.floor(n);
     const frac = round(n - whole, 2);
     const num = frac ? `${whole || ''}${FRACTIONS[frac] || ''}` : String(whole);
-    return `${num} ${n > 1 ? u.many : u.one}${u.of ? ` of ${u.of}` : ''}`;
+    return `${num}\u00a0${n > 1 ? u.many : u.one}${u.of ? ` of ${u.of}` : ''}`;
   }
+  // a no-break space keeps '120 g' together on one line
   const g = roundTo(grams, grams < 30 ? 1 : 5);
-  return `${g} ${ing.ml ? 'ml' : 'g'} ${lcFirst(ing.name)}`;
+  return `${g}\u00a0${ing.ml ? 'ml' : 'g'} ${lcFirst(ing.name)}`;
 }
 
 export function mealLines(meal, x) {

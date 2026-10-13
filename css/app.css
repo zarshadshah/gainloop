@@ -31,6 +31,13 @@
   --backdrop: rgba(12, 16, 20, 0.45);
   --shadow: 0 1px 2px rgba(28, 35, 43, 0.06), 0 8px 24px rgba(28, 35, 43, 0.08);
   --tape-shadow: inset 0 0 0 1px rgba(28, 35, 43, 0.14);
+  --fig: #1c232b;         /* exercise figure */
+  --fig-far: #8d969f;     /* the far arm and leg */
+  --kit: #6f7a85;         /* bars, cables */
+  --plate: #a3abb3;       /* plates and dumbbells */
+  --pad: #d3d7cf;         /* benches and machine pads */
+  --frame: #b5bbb2;       /* machine frames */
+  --anim-bg: var(--surface);
   --font-body: 'Barlow', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-display: 'Barlow Condensed', 'Arial Narrow', 'Roboto Condensed', system-ui, sans-serif;
   --safe-top: env(safe-area-inset-top, 0px);
@@ -62,6 +69,12 @@
     --backdrop: rgba(0, 0, 0, 0.6);
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
     --tape-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+    --fig: #e6e9e4;
+    --fig-far: #6e7882;
+    --kit: #9aa4ae;
+    --plate: #56606a;
+    --pad: #39414a;
+    --frame: #47505a;
     color-scheme: dark;
   }
 }
@@ -89,6 +102,12 @@
   --backdrop: rgba(0, 0, 0, 0.6);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
   --tape-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+  --fig: #e6e9e4;
+  --fig-far: #6e7882;
+  --kit: #9aa4ae;
+  --plate: #56606a;
+  --pad: #39414a;
+  --frame: #47505a;
   color-scheme: dark;
 }
 
@@ -464,3 +483,118 @@ body:not(.has-tabs) #toast { bottom: calc(var(--safe-bottom) + 24px); }
 
 .wchart .end-label { fill: var(--ink); font: 600 12px var(--font-body); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
 .changes { margin-top: 16px; }
+
+/* ---------- Exercise animations ---------- */
+.anim { display: block; width: 100%; height: 100%; }
+.anim line, .anim polyline, .anim path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.anim .fig { stroke: var(--fig); fill: var(--fig); }
+.anim line.fig, .anim polyline.fig { fill: none; }
+.anim .fig-far { stroke: var(--fig-far); fill: var(--fig-far); }
+.anim line.fig-far { fill: none; }
+.anim polygon.fig { stroke: var(--fig); stroke-linejoin: round; }
+.anim .cut { stroke: var(--anim-bg); }
+.anim .cut-fill { fill: var(--anim-bg); }
+.anim .plate { fill: var(--plate); stroke: none; }
+.anim .plate-line { stroke: var(--plate); }
+.anim .hub { fill: var(--anim-bg); }
+.anim .pad { fill: var(--pad); stroke: var(--pad); }
+.anim rect.pad { stroke: none; }
+.anim .frame { stroke: var(--frame); }
+.anim .metal { fill: var(--kit); stroke: none; }
+.anim .kit, .anim .cable { stroke: var(--kit); }
+.anim .floor { stroke: var(--line-2); }
+.anim .towel { stroke: var(--plate); }
+.anim-stage { position: relative; width: 100%; aspect-ratio: 4 / 3; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--anim-bg); }
+.anim-stage .anim { position: absolute; inset: 0; }
+.anim-toggle { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; min-width: 76px; min-height: 40px; justify-content: center; padding: 0 14px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--surface); color: var(--ink); font: 600 14px/1 var(--font-body); cursor: pointer; }
+.anim-toggle:hover { border-color: var(--ink-3); }
+.guide-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.guide-bar .guide-meta { margin: 0; }
+.anim-none { display: grid; place-items: center; padding: 16px; color: var(--ink-3); text-align: center; font-size: 15px; }
+.thumb { display: block; flex: 0 0 auto; width: 68px; aspect-ratio: 4 / 3; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: var(--anim-bg); }
+.thumb-none { display: grid; place-items: center; color: var(--ink-3); font: 600 11px/1.1 var(--font-body); text-align: center; }
+.ex-guide { display: flex; align-items: center; gap: 12px; width: 100%; margin: 4px 0 0; padding: 6px 0; border: 0; background: none; color: var(--ink); font: 600 15px/1.2 var(--font-body); text-align: left; cursor: pointer; }
+.ex-guide:hover .thumb { border-color: var(--ink-3); }
+.row-thumb { display: flex; align-items: center; gap: 12px; }
+
+/* ---------- Guides ---------- */
+.guide-works { margin: 10px 0 0; color: var(--ink-2); }
+.guide h3 { margin-top: 18px; }
+.kit-list { margin: 4px 0 0; padding-left: 20px; }
+.kit-list li { margin: 3px 0; }
+.steps-list { margin: 4px 0 0; padding-left: 24px; }
+.steps-list li { margin: 7px 0; padding-left: 2px; }
+.steps-list li::marker { font-weight: 600; color: var(--ink-2); }
+.guide .note { margin-top: 14px; }
+.guide-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 14px 0 0; color: var(--ink-2); font-size: 15px; }
+.food-group .chips label { min-height: 40px; padding: 0 14px; font-size: 15px; }
+.badge-line { background: var(--sunk); color: var(--ink-2); }
+.filter-row { display: flex; gap: 6px; overflow-x: auto; margin: 0 -16px 14px; padding: 2px 16px 6px; scrollbar-width: none; }
+.filter-row::-webkit-scrollbar { display: none; }
+.filter-row .seg { flex-wrap: nowrap; }
+.filter-row .seg label { white-space: nowrap; }
+.anim-host { position: absolute; inset: 0; }
+input[type="search"] { width: 100%; min-height: 50px; padding: 10px 14px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--surface); color: var(--ink); font-size: 17px; -webkit-appearance: none; appearance: none; }
+input[type="search"]:focus-visible { outline: 3px solid var(--ink); outline-offset: 1px; }
+.picker-results:empty { display: none; }
+.picker-results { margin-top: 6px; }
+.added { color: var(--good); font-weight: 600; white-space: nowrap; }
+
+/* ---------- Cook with what you have ---------- */
+.food-group { margin-top: 18px; }
+.food-group .h3 { margin-bottom: 8px; color: var(--ink-2); font-size: 15px; }
+.ideas { display: grid; gap: 10px; }
+.idea { padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.idea-name { margin: 0; font-weight: 600; font-size: 17px; }
+.idea-meta { margin: 2px 0 8px; color: var(--ink-2); font-size: 14px; }
+.idea-items { margin: 0 0 8px; color: var(--ink-2); font-size: 15px; }
+.idea .how summary { font-size: 15px; }
+.idea-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-top: 8px; }
+.need { color: var(--warn); font-size: 14px; font-weight: 500; }
+.slot-head { margin-top: 26px; }
+
+/* ---------- Health ---------- */
+.health-list { display: grid; gap: 10px; list-style: none; margin: 0; padding: 0; }
+.health-list li { padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.health-list .h3 { margin: 0 0 4px; }
+.health-list p { margin: 0; color: var(--ink-2); font-size: 15px; }
+.health-list p.h3 { margin: 0 0 4px; color: var(--ink); font-size: 17px; }
+.notes { display: grid; gap: 8px; margin: 0; padding-left: 20px; }
+.notes li { padding-left: 2px; }
+.card-note { margin: 10px 0 12px; padding: 10px 12px; border-radius: 10px; background: var(--sunk); font-size: 15px; }
+
+
+/* ---------- Exercise pictures in lists and sessions ---------- */
+.thumb-btn { flex: 0 0 auto; padding: 0; border: 0; border-radius: 10px; background: none; cursor: pointer; }
+.thumb-btn:hover .thumb { border-color: var(--ink-3); }
+.ex-guide-text { display: grid; gap: 1px; min-width: 0; }
+.ex-guide-text > span:first-child { text-decoration: underline; text-underline-offset: 3px; }
+.ex-guide-text .fine { font-weight: 400; overflow-wrap: anywhere; }
+.picked-head { margin-top: 18px; }
+.swap-row { padding: 6px 0; }
+.row-pick { display: flex; align-items: center; gap: 12px; flex: 1 1 auto; min-width: 0; min-height: 52px; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }
+.row-pick > .i { color: var(--ink-3); }
+.row-pick:hover .row-title { text-decoration: underline; text-underline-offset: 3px; }
+.swap-all { margin-top: 22px; }
+.sheet-body .list + .fine { margin-top: 8px; }
+.session-notes { margin: 0 0 16px; }
+.health-banner { align-items: flex-start; }
+.health-banner > div:first-child { flex: 1 1 240px; }
+.health-banner p { margin: 0 0 4px; }
+.banner-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+
+/* ---------- Cook with what you have: the food picker ---------- */
+.food-picker { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.food-picker > summary { position: relative; display: grid; gap: 2px; padding: 12px 32px 12px 0; list-style: none; cursor: pointer; }
+.food-picker > summary::-webkit-details-marker { display: none; }
+.food-picker > summary::after { content: ''; position: absolute; right: 8px; top: 50%; width: 9px; height: 9px; border-right: 2px solid var(--ink-3); border-bottom: 2px solid var(--ink-3); transform: translateY(-70%) rotate(45deg); }
+.food-picker[open] > summary::after { transform: translateY(-20%) rotate(225deg); }
+.food-picker[open] { padding-bottom: 8px; }
+.food-picker .food-group:first-of-type { margin-top: 4px; }
+.pantry-foot { margin: 14px 0 0; }
+#pantry-results { margin-top: 24px; scroll-margin-top: 12px; }
+#pantry-results > .h2 { margin-bottom: 0; }
+.slot-head .h3 { margin-bottom: 8px; }
+.pantry-bar.away { visibility: hidden; }
+details.session-notes > summary { font-weight: 600; cursor: pointer; }
+details.session-notes[open] > summary { margin-bottom: 8px; }

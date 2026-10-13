@@ -1,5 +1,6 @@
 // Ingredients: values per 100 g (or 100 ml), typical UK supermarket labels, rounded.
 // Flags drive the hard diet rules. 'meat' is set to the type of meat.
+// Health flags: sugar (added sugar), shake (protein powder), salty and satfat (cut back where there are options).
 // unit: how to count it on the shopping list. pantry: listed without amounts.
 
 export const SHOP_GROUPS = ['Meat and fish', 'Dairy and eggs', 'Plant protein', 'Bread, grains and potatoes', 'Fruit and veg', 'Tins and jars', 'Cupboard'];
@@ -8,21 +9,21 @@ export const INGREDIENTS = {
   chicken: { name: 'Chicken breast', kcal: 106, p: 24, c: 0, f: 1.1, meat: 'chicken', shop: 'Meat and fish' },
   'chicken-thigh': { name: 'Chicken thigh fillets', kcal: 140, p: 19, c: 0, f: 7, meat: 'chicken', shop: 'Meat and fish' },
   'beef-mince': { name: 'Beef mince (5% fat)', kcal: 124, p: 21, c: 0, f: 4.5, meat: 'beef', shop: 'Meat and fish' },
-  lamb: { name: 'Lean diced lamb', kcal: 150, p: 21, c: 0, f: 7, meat: 'lamb', shop: 'Meat and fish' },
+  lamb: { name: 'Lean diced lamb', kcal: 150, p: 21, c: 0, f: 7, meat: 'lamb', satfat: true, shop: 'Meat and fish' },
   salmon: { name: 'Salmon fillets', kcal: 210, p: 20.5, c: 0, f: 14, fish: true, shop: 'Meat and fish' },
   tuna: { name: 'Tuna in spring water', kcal: 109, p: 25, c: 0, f: 0.8, fish: true, shop: 'Tins and jars', unit: { one: 'tin', many: 'tins', g: 112, list: true } },
 
   eggs: { name: 'Eggs', kcal: 140, p: 12.6, c: 0.4, f: 9.5, egg: true, shop: 'Dairy and eggs', unit: { one: 'egg', many: 'eggs', g: 50, count: true } },
   'greek-yog': { name: 'Fat-free Greek-style yogurt', kcal: 57, p: 10, c: 4, f: 0.2, dairy: true, shop: 'Dairy and eggs' },
   milk: { name: 'Semi-skimmed milk', kcal: 50, p: 3.6, c: 4.8, f: 1.8, dairy: true, shop: 'Dairy and eggs', ml: true },
-  cheddar: { name: 'Mature cheddar', kcal: 416, p: 25, c: 0.1, f: 34.9, dairy: true, shop: 'Dairy and eggs' },
+  cheddar: { name: 'Mature cheddar', kcal: 416, p: 25, c: 0.1, f: 34.9, dairy: true, salty: true, satfat: true, shop: 'Dairy and eggs' },
   cottage: { name: 'Reduced-fat cottage cheese', kcal: 72, p: 11.1, c: 3.1, f: 1.5, dairy: true, shop: 'Dairy and eggs' },
-  paneer: { name: 'Paneer', kcal: 321, p: 20, c: 3, f: 25, dairy: true, shop: 'Dairy and eggs' },
-  feta: { name: 'Feta', kcal: 264, p: 16, c: 1, f: 21, dairy: true, shop: 'Dairy and eggs' },
-  whey: { name: 'Whey protein powder', kcal: 390, p: 78, c: 6, f: 6, dairy: true, shop: 'Cupboard', unit: { one: 'scoop', many: 'scoops', g: 30, count: true, of: 'whey protein', list: true } },
+  paneer: { name: 'Paneer', kcal: 321, p: 20, c: 3, f: 25, dairy: true, satfat: true, shop: 'Dairy and eggs' },
+  feta: { name: 'Feta', kcal: 264, p: 16, c: 1, f: 21, dairy: true, salty: true, satfat: true, shop: 'Dairy and eggs' },
+  whey: { name: 'Whey protein powder', kcal: 390, p: 78, c: 6, f: 6, dairy: true, shake: true, shop: 'Cupboard', unit: { one: 'scoop', many: 'scoops', g: 30, count: true, of: 'whey protein', list: true } },
 
   'soya-milk': { name: 'Unsweetened soya drink', kcal: 33, p: 3.3, c: 0.2, f: 1.8, soy: true, shop: 'Plant protein', ml: true },
-  'pea-protein': { name: 'Pea protein powder', kcal: 375, p: 80, c: 2, f: 6, shop: 'Cupboard', unit: { one: 'scoop', many: 'scoops', g: 30, count: true, of: 'pea protein', list: true } },
+  'pea-protein': { name: 'Pea protein powder', kcal: 375, p: 80, c: 2, f: 6, shake: true, shop: 'Cupboard', unit: { one: 'scoop', many: 'scoops', g: 30, count: true, of: 'pea protein', list: true } },
   tofu: { name: 'Firm tofu', kcal: 125, p: 13, c: 1.5, f: 7.2, soy: true, shop: 'Plant protein' },
   lentils: { name: 'Red lentils (dried)', kcal: 318, p: 24, c: 48, f: 1.3, shop: 'Plant protein' },
   chickpeas: { name: 'Chickpeas (tinned, drained)', kcal: 120, p: 7.2, c: 13.5, f: 2.6, shop: 'Tins and jars', unit: { one: 'tin', many: 'tins', g: 240, list: true } },
@@ -52,7 +53,7 @@ export const INGREDIENTS = {
   pb: { name: 'Peanut butter', kcal: 600, p: 25, c: 12, f: 49, nuts: true, shop: 'Cupboard' },
   almonds: { name: 'Almonds', kcal: 610, p: 21, c: 7, f: 54, nuts: true, shop: 'Cupboard' },
   'olive-oil': { name: 'Olive oil', kcal: 884, p: 0, c: 0, f: 100, shop: 'Cupboard' },
-  honey: { name: 'Honey', kcal: 330, p: 0.4, c: 82, f: 0, honey: true, shop: 'Cupboard' },
+  honey: { name: 'Honey', kcal: 330, p: 0.4, c: 82, f: 0, honey: true, sugar: true, shop: 'Cupboard' },
   hummus: { name: 'Hummus', kcal: 290, p: 7, c: 10, f: 24, sesame: true, shop: 'Plant protein' },
 
   // Pantry staples: listed as "check you have", no amounts, negligible calories

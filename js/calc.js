@@ -297,14 +297,29 @@ export const calorieFloor = (profile, bmrValue) =>
   Math.round(Math.max(bmrValue, profile.sex === 'female' ? 1400 : 1600) / 10) * 10;
 
 // prevProtein: keep the current protein target unless the new one is 4 g or more away,
-// so normal day-to-day weight swings don't nudge it up and down at every check-in
-export function macrosFor(kcal, kg, goal, sex, bf, lbm, prevProtein = null) {
-  let protein = (goal === 'lean' ? 2.0 : 1.8) * kg;
+// so normal day-to-day weight swings don't nudge it up and down at every check-in.
+// health (from healthRules): standard protein for kidney disease, carbs capped for diabetes.
+export function macrosFor(kcal, kg, goal, sex, bf, lbm, prevProtein = null, health = null) {
+  const standard = !!health?.standardProtein;
+  let protein = standard ? 0.8 * kg : (goal === 'lean' ? 2.0 : 1.8) * kg;
   const highFat = bf !== null && bf !== undefined && (sex === 'female' ? bf > 32 : bf > 25);
-  if (highFat && lbm) protein = 2.2 * lbm;
+  if (highFat && lbm && !standard) protein = 2.2 * lbm;
   protein = prevProtein && Math.abs(protein - prevProtein) < 4 ? prevProtein : roundTo(protein, 5);
   let fat = roundTo(Math.max(0.7 * kg, (kcal * 0.25) / 9), 5);
   let carbs = (kcal - protein * 4 - fat * 9) / 4;
+  if (health?.carbCap) {
+    const maxCarbs = (kcal * health.carbCap) / 4;
+    if (carbs > maxCarbs) {
+      let spare = (carbs - maxCarbs) * 4;
+      if (!standard) {
+        const extraP = roundTo(Math.min(spare / 4, Math.max(0, 2.2 * kg - protein)), 5);
+        protein += extraP;
+        spare -= extraP * 4;
+      }
+      fat = roundTo(fat + spare / 9, 5);
+      carbs = (kcal - protein * 4 - fat * 9) / 4;
+    }
+  }
   if (carbs < 60) {
     fat = Math.max(roundTo(0.6 * kg, 5), fat - roundTo(((60 - carbs) * 4) / 9, 5));
     carbs = (kcal - protein * 4 - fat * 9) / 4;
@@ -312,7 +327,7 @@ export function macrosFor(kcal, kg, goal, sex, bf, lbm, prevProtein = null) {
   return { protein, fat, carbs: Math.max(0, roundTo(carbs, 5)) };
 }
 
-export function startingNutrition(profile, kg, age, bfPct = null, lbm = null) {
+export function startingNutrition(profile, kg, age, bfPct = null, lbm = null, health = null) {
   const b = bmr(profile.sex, kg, profile.heightCm, age);
   const maintenance = roundTo(b * activityFactor(profile.activity, profile.days), 10);
   let adj = 0;
@@ -322,7 +337,7 @@ export function startingNutrition(profile, kg, age, bfPct = null, lbm = null) {
   const kcal = Math.max(floor, roundTo(maintenance + adj, 10));
   return {
     kcal,
-    ...macrosFor(kcal, kg, profile.goal, profile.sex, bfPct, lbm),
+    ...macrosFor(kcal, kg, profile.goal, profile.sex, bfPct, lbm, null, health),
     maintenance,
     bmr: Math.round(b),
     adj: kcal - maintenance,

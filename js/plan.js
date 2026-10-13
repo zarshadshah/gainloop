@@ -1,6 +1,6 @@
 // Training plan: weekly sets per muscle, a split that fits your days and time, exercises for your equipment,
 // and double-progression advice. Rule-based so every number can be explained.
-import { EXERCISES, MUSCLES, exerciseById, muscleName } from './data/exercises.js';
+import { EXERCISES, MUSCLES, customExercises, exerciseById, muscleName } from './data/exercises.js';
 import { clamp, lcFirst, sum } from './util.js';
 
 export const BASE_SETS = { beginner: 10, intermediate: 12, advanced: 14 };
@@ -43,38 +43,57 @@ export function eligible(ex, profile) {
   return true;
 }
 
-export const optionsFor = (muscle, profile) => EXERCISES.filter((e) => e.m === muscle && eligible(e, profile));
+// Exercises the planner may use for a muscle. ctx.mine: exercises you already do (always allowed, even ones
+// the planner wouldn't pick by itself). ctx.avoid: exercises to leave out for a sore joint, if there's another option.
+export function optionsFor(muscle, profile, ctx = {}) {
+  const mine = new Set(ctx.mine || []);
+  const avoid = ctx.avoid || new Set();
+  const lib = EXERCISES.filter((e) => e.m === muscle && eligible(e, profile) && (e.auto !== false || mine.has(e.id)));
+  const custom = customExercises().filter((e) => e.m === muscle && mine.has(e.id));
+  const list = [...lib, ...custom];
+  const safe = list.filter((e) => !avoid.has(e.id) || mine.has(e.id));
+  return safe.length ? safe : list;
+}
+
+// Everything you could swap to for a muscle, including library extras the planner doesn't pick by itself
+export function swapChoices(muscle, profile) {
+  return [...EXERCISES.filter((e) => e.m === muscle && eligible(e, profile)), ...customExercises().filter((e) => e.m === muscle)];
+}
 
 // Weekly sets for each muscle before they are fitted into sessions
-export function weeklySets(profile, priorities) {
+export function weeklySets(profile, priorities, mineMuscles = new Set()) {
   const base = BASE_SETS[profile.experience] || 12;
   const pri = new Set(priorities.map((p) => p.muscle));
   const weekly = {};
   for (const { id } of MUSCLES) weekly[id] = Math.round(base * MULT[id]);
   for (const m of pri) weekly[m] = m === 'forearms' ? 4 : weekly[m] + BOOST[profile.experience];
+  // forearms normally get no direct sets, but if you already train them they keep a little
+  if (mineMuscles.has('forearms') && !weekly.forearms) weekly.forearms = 3;
 
   const capacity = profile.days * setsPerSession(profile.minutes);
   let total = sum(Object.values(weekly));
   let squeezed = false;
+  // forearms you already train keep a couple of sets even when time is short
+  const floorOf = (m) => (m === 'forearms' && mineMuscles.has('forearms') ? 2 : FLOOR[m]);
 
   if (total > capacity) {
     squeezed = true;
     const reducible = MUSCLES.map((m) => m.id).filter((m) => !pri.has(m));
     const excess = total - capacity;
-    const room = sum(reducible.map((m) => Math.max(0, weekly[m] - FLOOR[m])));
+    const room = sum(reducible.map((m) => Math.max(0, weekly[m] - floorOf(m))));
     if (room >= excess) {
       for (const m of reducible) {
-        const give = Math.max(0, weekly[m] - FLOOR[m]);
+        const give = Math.max(0, weekly[m] - floorOf(m));
         weekly[m] = Math.round(weekly[m] - (give / room) * excess);
       }
     } else {
-      for (const m of reducible) weekly[m] = FLOOR[m];
+      for (const m of reducible) weekly[m] = floorOf(m);
       total = sum(Object.values(weekly));
       if (total > capacity) {
         const f = capacity / total;
         for (const m of Object.keys(weekly)) {
           if (weekly[m] === 0) continue;
-          weekly[m] = Math.max(FLOOR[m] > 0 ? 2 : 0, Math.round(weekly[m] * f));
+          weekly[m] = Math.max(floorOf(m) > 0 ? 2 : 0, Math.round(weekly[m] * f));
         }
       }
     }
@@ -82,14 +101,20 @@ export function weeklySets(profile, priorities) {
   return { weekly, capacity, squeezed, base };
 }
 
-function pickExercises(muscle, count, occurrence, profile, swaps, usedInSession) {
-  const opts = optionsFor(muscle, profile);
+function pickExercises(muscle, count, occurrence, profile, swaps, usedInSession, ctx = {}) {
+  const mine = new Set(ctx.mine || []);
+  const placed = ctx.placed || new Set();
+  const opts = optionsFor(muscle, profile, ctx);
   if (!opts.length) return [];
+  // exercises you already do go to the front of each list, so they're picked first
+  const mineFirst = (arr) => [...arr.filter((e) => mine.has(e.id)), ...arr.filter((e) => !mine.has(e.id))];
   let compounds = opts.filter((e) => e.k === 'c');
-  const isolations = opts.filter((e) => e.k === 'i');
+  let isolations = opts.filter((e) => e.k === 'i');
   // With weights available, rotate through loaded lifts; bodyweight moves stay available as swaps
-  if (profile.equipment !== 'bw' && compounds.some((e) => e.load === 'kg')) compounds = compounds.filter((e) => e.load === 'kg');
-  if (profile.experience === 'beginner' && compounds.some((e) => !PROGRESSIONS.has(e.id))) compounds = compounds.filter((e) => !PROGRESSIONS.has(e.id));
+  if (profile.equipment !== 'bw' && compounds.some((e) => e.load === 'kg')) compounds = compounds.filter((e) => e.load === 'kg' || mine.has(e.id));
+  if (profile.experience === 'beginner' && compounds.some((e) => !PROGRESSIONS.has(e.id))) compounds = compounds.filter((e) => !PROGRESSIONS.has(e.id) || mine.has(e.id));
+  compounds = mineFirst(compounds);
+  isolations = mineFirst(isolations);
 
   const rot = (arr, i) => (arr.length ? arr[((i % arr.length) + arr.length) % arr.length] : null);
   const picks = [];
@@ -102,39 +127,45 @@ function pickExercises(muscle, count, occurrence, profile, swaps, usedInSession)
     picks.push(chosen);
     return true;
   };
+  // exercises you already do that aren't in the week yet come first, so each one gets in
+  const fresh = (arr) => arr.find((e) => mine.has(e.id) && !placed.has(e.id) && !swaps?.[e.id] && !picks.includes(e) && !usedInSession.has(e.id));
+  const pickFrom = (arr, i) => take(fresh(arr)) || take(rot(arr, i));
 
   if (muscle === 'back' && count >= 2) {
     // one vertical pull and one row when the equipment allows
     const vert = compounds.filter((e) => VERTICAL_PULLS.has(e.id));
     const horiz = compounds.filter((e) => !VERTICAL_PULLS.has(e.id));
-    take(rot(vert, occurrence)) || take(rot(horiz, occurrence + 1));
-    take(rot(horiz, occurrence)) || take(rot(horiz, occurrence + 1)) || take(rot(isolations, occurrence));
+    pickFrom(vert, occurrence) || pickFrom(horiz, occurrence + 1);
+    pickFrom(horiz, occurrence) || take(rot(horiz, occurrence + 1)) || pickFrom(isolations, occurrence);
   } else if (PREFER_ISOLATION.has(muscle)) {
     // arms, calves, abs and forearms: two different isolation moves rather than another compound
     const pool1 = isolations.length ? isolations : compounds;
-    take(rot(pool1, occurrence));
-    if (count >= 2) take(rot(pool1, occurrence + 1)) || take(rot(compounds.length ? compounds : pool1, occurrence));
+    pickFrom(pool1, occurrence);
+    if (count >= 2) pickFrom(pool1, occurrence + 1) || take(rot(compounds.length ? compounds : pool1, occurrence));
   } else {
     const primary = compounds.length ? compounds : isolations;
-    take(rot(primary, occurrence));
+    pickFrom(primary, occurrence);
     if (count >= 2) {
       const secondary = isolations.length ? isolations : compounds;
-      take(rot(secondary, occurrence)) || take(rot(secondary, occurrence + 1)) || take(rot(primary, occurrence + 1));
+      pickFrom(secondary, occurrence) || take(rot(secondary, occurrence + 1)) || take(rot(primary, occurrence + 1));
     }
   }
   const pool = [...compounds, ...isolations];
   let i = occurrence;
   while (picks.length < count && i < occurrence + pool.length * 2) {
-    take(rot(pool, i));
+    pickFrom(pool, i);
     i += 1;
   }
+  for (const p of picks) if (mine.has(p.id)) placed.add(p.id);
   return picks;
 }
 
 // Build the whole programme
-export function buildProgram(profile, priorities, swaps = {}) {
+export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
   const split = SPLITS[profile.days] || SPLITS[3];
-  const { weekly, capacity, squeezed: globalSqueeze, base } = weeklySets(profile, priorities);
+  const mine = new Set(ctx.mine || []);
+  const mineMuscles = new Set([...mine].map((id) => exerciseById(id)?.m).filter(Boolean));
+  const { weekly, capacity, squeezed: globalSqueeze, base } = weeklySets(profile, priorities, mineMuscles);
   const cap = setsPerSession(profile.minutes);
   const pri = new Set(priorities.map((p) => p.muscle));
   const priOrder = priorities.map((p) => p.muscle);
@@ -178,6 +209,7 @@ export function buildProgram(profile, priorities, swaps = {}) {
 
   // 3. Pick exercises for each muscle in each session
   const occ = {};
+  const placed = new Set();
   for (const s of sessions) {
     s.slots = [];
     for (const m of ORDER) {
@@ -186,7 +218,7 @@ export function buildProgram(profile, priorities, swaps = {}) {
       occ[m] = (occ[m] ?? -1) + 1;
       // back gets a pull-down and a row once it has 4 sets; otherwise up to 4 sets per exercise
       const nEx = m === 'back' && sets >= 4 ? Math.max(2, Math.ceil(sets / 4)) : sets <= 4 ? 1 : Math.ceil(sets / 4);
-      const exs = pickExercises(m, nEx, occ[m], profile, swaps, new Set(s.slots.map((x) => x.ex)));
+      const exs = pickExercises(m, nEx, occ[m], profile, swaps, new Set(s.slots.map((x) => x.ex)), { ...ctx, placed });
       if (!exs.length) continue;
       const per = Math.floor(sets / exs.length);
       let rem = sets - per * exs.length;
@@ -194,9 +226,35 @@ export function buildProgram(profile, priorities, swaps = {}) {
         const n = per + (rem > 0 ? 1 : 0);
         if (rem > 0) rem -= 1;
         // when only one exercise fits your equipment, cap it at 5 sets
-        s.slots.push({ ex: ex.id, m, sets: clamp(n, 2, 5), priority: pri.has(m) });
+        s.slots.push({ ex: ex.id, m, sets: clamp(n, 2, 5), priority: pri.has(m), ...(mine.has(ex.id) ? { mine: true } : {}) });
       }
     }
+  }
+
+  // 4. An exercise you already do that didn't fit its usual slot (a chin-up when biceps get curls, say)
+  //    takes the place of one of the planner's own picks for the same muscle
+  const swappedIn = new Set(Object.values(swaps || {}));
+  for (const id of mine) {
+    const ex = exerciseById(id);
+    if (!ex || placed.has(id) || swaps?.[id] || (!ex.custom && !eligible(ex, profile))) continue;
+    let best = null;
+    for (const s of sessions) {
+      if (s.slots.some((x) => x.ex === id)) continue;
+      for (const sl of s.slots) {
+        if (sl.m !== ex.m || sl.mine || swappedIn.has(sl.ex)) continue;
+        const repeats = sessions.filter((t) => t.slots.some((x) => x.ex === sl.ex)).length;
+        const score = (exerciseById(sl.ex).k === ex.k ? 2 : 0) + (repeats > 1 ? 1 : 0);
+        if (!best || score > best.score) best = { sl, score };
+      }
+    }
+    if (best) {
+      best.sl.ex = id;
+      best.sl.mine = true;
+      placed.add(id);
+    }
+  }
+
+  for (const s of sessions) {
     const rank = (sl) => {
       const ex = exerciseById(sl.ex);
       if (sl.m === 'abs' && !sl.priority) return 4;
@@ -213,6 +271,25 @@ export function buildProgram(profile, priorities, swaps = {}) {
   const done = {};
   for (const s of sessions) for (const sl of s.slots) done[sl.m] = (done[sl.m] || 0) + sl.sets;
 
+  // Which of your own exercises made it in, and why any didn't
+  const mineReport = [...mine].map((id) => {
+    const ex = exerciseById(id);
+    if (!ex) return null;
+    const where = sessions.filter((s) => s.slots.some((sl) => sl.ex === id)).map((s) => s.name);
+    let why = '';
+    if (!where.length) {
+      const barOnly = ex.bar && ex.eq.includes(profile.equipment) && profile.equipment !== 'gym' && !profile.pullupBar;
+      if (!ex.custom && !eligible(ex, profile)) {
+        why = barOnly ? 'It needs a pull-up bar. If you have one, tick it in your training details.'
+          : profile.equipment === 'gym' ? 'It’s a version for training at home, so your plan uses gym exercises for that muscle.'
+            : 'It needs equipment you said you don’t have.';
+      } else if (swaps?.[id]) why = 'You swapped it for something else.';
+      else if (!done[ex.m]) why = `${muscleName(ex.m)} ${SINGULAR.has(ex.m) ? 'gets' : 'get'} no direct sets in this plan.`;
+      else why = `Your other ${MUSCLE_WORD[ex.m] || ex.m} exercises filled the slots this week.`;
+    }
+    return { id, where, why };
+  }).filter(Boolean);
+
   return {
     split: split.name,
     days: profile.days,
@@ -223,6 +300,7 @@ export function buildProgram(profile, priorities, swaps = {}) {
     perSession: cap,
     squeezed: globalSqueeze || trimmed,
     weekly: done,
+    mine: mineReport,
     priorities: priorities.map((p) => ({ ...p })),
     sessions: sessions.map(({ id, name, type, slots, sets, minutes }) => ({ id, name, type, slots, sets, minutes })),
   };
@@ -230,6 +308,8 @@ export function buildProgram(profile, priorities, swaps = {}) {
 
 const EXPERIENCE_WORD = { beginner: 'Newer', intermediate: 'Intermediate', advanced: 'Experienced' };
 const SINGULAR = new Set(['chest', 'back']);
+// 'shoulder exercises', not 'shoulders exercises'
+const MUSCLE_WORD = { shoulders: 'shoulder', quads: 'quad', hamstrings: 'hamstring', glutes: 'glute', calves: 'calf', abs: 'ab', forearms: 'forearm' };
 
 export const SITE_REASON = {
   chest: 'Your chest measurement is one of the furthest behind its target. Chest and back muscles both add to it.',
@@ -261,16 +341,16 @@ export function whySets(program, muscle, profile) {
 
 export const restText = (ex) => (ex.heavy ? '2 to 3 min rest' : ex.k === 'c' ? '2 min rest' : '60 to 90 s rest');
 
-export const repText = (ex) => (ex.load === 's' ? `${ex.rr[0]} to ${ex.rr[1]} s` : `${ex.rr[0]} to ${ex.rr[1]} reps`);
+export const repText = (ex, rr = ex.rr) => (ex.load === 's' ? `${rr[0]} to ${rr[1]} s` : `${rr[0]} to ${rr[1]} reps`);
 
 // Double progression: stay at a weight until you hit the top of the range on every set, then go up
-export function advice(ex, history, fmtW) {
+export function advice(ex, history, fmtW, rr = ex.rr, stop = '1 or 2') {
   const last = history && history.length ? history[history.length - 1] : null;
-  const [lo, hi] = ex.rr;
+  const [lo, hi] = rr;
   if (!last || !last.reps?.length) {
-    if (ex.load === 'kg') return { kg: null, text: `First time: pick a weight you could lift about ${hi + 2} times, and stop each set 1 or 2 reps before you'd fail.` };
+    if (ex.load === 'kg') return { kg: null, text: `First time: pick a weight you could lift about ${hi + 2} times, and stop each set ${stop} reps before you'd fail.` };
     if (ex.load === 's') return { kg: null, text: `First time: hold for as long as you can with good form, up to ${hi} seconds.` };
-    return { kg: null, text: 'First time: do as many good reps as you can, stopping 1 or 2 short of failure.' };
+    return { kg: null, text: `First time: do as many good reps as you can, stopping ${stop} short of failure.` };
   }
   const allTop = last.reps.every((r) => r >= hi);
   const anyLow = last.reps.some((r) => r < lo);
@@ -279,7 +359,7 @@ export function advice(ex, history, fmtW) {
     const w = last.kg ?? 0;
     if (allTop) {
       if (!w) return { kg: null, text: `You hit ${hi} on every set with bodyweight. Add some load: dumbbells or a loaded backpack.` };
-      return { kg: w + ex.step, text: `You hit ${hi} on every set last time, so go up to ${fmtW(w + ex.step)}, or the nearest weight up.` };
+      return { kg: w + (ex.step || 2.5), text: `You hit ${hi} on every set last time, so go up to ${fmtW(w + (ex.step || 2.5))}, or the nearest weight up.` };
     }
     if (anyLow) return { kg: w || null, text: `Stay at ${w ? fmtW(w) : 'bodyweight'} and aim for at least ${lo} on every set. If you miss again next time, drop about 10%.` };
     return { kg: w || null, text: `Stay at ${w ? fmtW(w) : 'bodyweight'} and beat last time by a rep on at least one set.` };

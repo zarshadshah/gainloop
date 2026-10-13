@@ -1,7 +1,8 @@
 // Ties the maths together: setting up, refreshing the plan, and check-ins. Works on a state object, no DOM.
 import * as C from './calc.js';
 import { MEALS } from './data/foods.js';
-import { muscleName } from './data/exercises.js';
+import { exerciseById, muscleName, setCustomExercises } from './data/exercises.js';
+import { healthRules, normHealth } from './health.js';
 import { filterMeals, planWeek, rescaleDay } from './meals.js';
 import { SITE_REASON, buildProgram } from './plan.js';
 import { addDays, fmtInt, mondayOf, rng, round } from './util.js';
@@ -11,15 +12,27 @@ export const mealsById = (state) => new Map([...MEALS, ...(state.customMeals || 
 
 export const targetsOf = (state) => ({ kcal: state.nutrition.kcal, protein: state.nutrition.protein });
 
+// Health conditions turned into planning rules
+export const rulesOf = (state) => healthRules(state.profile?.health);
+
+// Your food rules plus any that come from health (coeliac adds gluten)
+export function dietOf(state) {
+  const d = state.profile.diet;
+  return rulesOf(state).gluten && !(d.avoid || []).includes('gluten') ? { ...d, avoid: [...(d.avoid || []), 'gluten'] } : d;
+}
+
+export const allowedMeals = (state) => filterMeals(dietOf(state), state.customMeals, rulesOf(state));
+
 export function refreshProgram(state) {
-  state.program = buildProgram(state.profile, C.priorityMuscles(state), state.swaps);
+  setCustomExercises(state.customExercises);
+  state.program = buildProgram(state.profile, C.priorityMuscles(state), state.swaps, { mine: state.myExercises || [], avoid: rulesOf(state).avoid });
   return state.program;
 }
 
 export function refreshMeals(state, today, reshuffle = false) {
-  const { allowed } = filterMeals(state.profile.diet, state.customMeals);
+  const { allowed } = allowedMeals(state);
   const seed = reshuffle || !state.mealWeek ? Math.floor(Math.random() * 1e9) : state.mealWeek.seed;
-  state.mealWeek = planWeek(allowed, targetsOf(state), seed, mondayOf(today));
+  state.mealWeek = planWeek(allowed, targetsOf(state), seed, mondayOf(today), { carbAware: !!rulesOf(state).carbCap });
   return state.mealWeek;
 }
 
@@ -48,7 +61,14 @@ function bodyBasis(state, today) {
 
 export function freshNutrition(state, today) {
   const { kg, bf, lbm } = bodyBasis(state, today);
-  return C.startingNutrition(state.profile, kg, C.ageNow(state.profile, today), bf?.pct ?? null, lbm);
+  return C.startingNutrition(state.profile, kg, C.ageNow(state.profile, today), bf?.pct ?? null, lbm, rulesOf(state));
+}
+
+// Same calories, macros redone (after health details change)
+function remacro(state, today) {
+  const { kg, bf, lbm } = bodyBasis(state, today);
+  const p = state.profile;
+  return { ...state.nutrition, ...C.macrosFor(state.nutrition.kcal, kg, p.goal, p.sex, bf?.pct ?? null, lbm, null, rulesOf(state)) };
 }
 
 const kcalText = (n) => `${fmtInt(n)} kcal`;
@@ -103,6 +123,12 @@ export function startState(state, today) {
   ];
   if (C.hasFrameTargets(state)) items.push({ area: 'targets', text: 'Targets worked out from your wrist, ankle and height', why: 'These are upper estimates for a natural lifter at about 8 to 10% body fat. Your aim starts at 90% of them.' });
   items.push(...priorityItems([], state.program.priorities));
+  const mineIn = (state.program.mine || []).filter((x) => x.where.length);
+  if (mineIn.length) {
+    items.push({ area: 'training', text: `${mineIn.length === 1 ? 'One exercise' : `${mineIn.length} exercises`} you already do ${mineIn.length === 1 ? 'is' : 'are'} in your plan`, why: `${mineIn.map((x) => `${exerciseById(x.id).name} in ${x.where.join(' and ')}`).join('; ')}.` });
+  }
+  const r = rulesOf(state);
+  if (r.items.length) items.push({ area: 'health', text: `Adjusted for ${r.items.map((i) => i.name.toLowerCase()).join(', ')}`, why: r.items.map((i) => `${i.name}: ${i.changes.join(', ').toLowerCase()}.`).join(' ') });
   state.changes.push({ d: today, kind: 'setup', items });
 }
 
@@ -111,9 +137,20 @@ export function afterProfileChange(state, before, today) {
   const p = state.profile;
   const items = [];
   const calorieInputs = ['goal', 'activity', 'days', 'sex', 'heightCm', 'experience'];
+  const healthChanged = JSON.stringify(normHealth(before.health)) !== JSON.stringify(normHealth(p.health));
   if (calorieInputs.some((k) => before[k] !== p[k])) {
     state.nutrition = freshNutrition(state, today);
     items.push({ area: 'calories', text: `Calories reset to ${kcalText(state.nutrition.kcal)} with ${state.nutrition.protein} g protein`, why: nutritionWhy(state.nutrition, p) });
+  } else if (healthChanged) {
+    const old = state.nutrition;
+    state.nutrition = remacro(state, today);
+    if (old.protein !== state.nutrition.protein || old.carbs !== state.nutrition.carbs) {
+      items.push({ area: 'calories', text: `Calories stay at ${kcalText(state.nutrition.kcal)}: ${state.nutrition.protein} g protein, ${state.nutrition.carbs} g carbs, ${state.nutrition.fat} g fat`, why: 'Your health details changed how calories are split between protein, carbs and fat.' });
+    }
+  }
+  if (healthChanged) {
+    const r = rulesOf(state);
+    items.push({ area: 'health', text: r.items.length ? `Plan adjusted for ${r.items.map((i) => i.name.toLowerCase()).join(', ')}` : 'Health details cleared', why: r.items.length ? r.items.map((i) => `${i.name}: ${i.changes.join(', ').toLowerCase()}.`).join(' ') : 'Your plan is back to the standard settings.' });
   }
   const trainingInputs = ['days', 'minutes', 'equipment', 'pullupBar', 'experience'];
   const oldPri = state.program?.priorities || [];
@@ -123,7 +160,7 @@ export function afterProfileChange(state, before, today) {
   }
   items.push(...priorityItems(oldPri, state.program.priorities));
   const dietChanged = JSON.stringify(before.diet) !== JSON.stringify(p.diet);
-  if (dietChanged || items.some((i) => i.area === 'calories')) refreshMeals(state, today, true);
+  if (dietChanged || healthChanged || items.some((i) => i.area === 'calories')) refreshMeals(state, today, true);
   if (dietChanged) items.push({ area: 'food', text: 'Meal plan rebuilt for your new food rules', why: 'Meals that break a rule are never used.' });
   if (items.length) state.changes.push({ d: today, kind: 'edit', items });
   return items;
@@ -140,7 +177,7 @@ export function analyseCheckin(state, today, fmtKg = (n, dp = 1) => `${round(n, 
   const decision = C.calorieDecision({ profile: p, kg, rate, kcal: n.kcal, floor: n.floor ?? C.calorieFloor(p, n.bmr || 0), waist: C.waistSignal(state.measures), early: !rate && C.rateTooEarly(state.weights, today) });
   const newKcal = n.kcal + decision.delta;
   const { bf, lbm } = bodyBasis(state, today);
-  const macros = C.macrosFor(newKcal, kg, p.goal, p.sex, bf?.pct ?? null, lbm, n.protein);
+  const macros = C.macrosFor(newKcal, kg, p.goal, p.sex, bf?.pct ?? null, lbm, n.protein, rulesOf(state));
   const items = [];
 
   const targetLine = decision.target === 0 ? 'Target: steady weight.' : `Target: ${rateText(decision.target, fmtKg)}.`;

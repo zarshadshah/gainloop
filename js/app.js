@@ -1,21 +1,47 @@
 // Gainloop: screens, actions and routing. The maths lives in calc.js, plan.js, meals.js and engine.js.
-import { addDays, andList, dayShort, esc, fmtDate, fmtInt, isoDate, lcFirst, plural, relDays, round, uid, weekdayIndex } from './util.js';
+import { addDays, andList, dayLong, dayShort, esc, fmtDate, fmtInt, isoDate, lcFirst, plural, relDays, round, uid, weekdayIndex } from './util.js';
 import { downloadText } from './download.js';
 import { bodyInputValue, fmtBody, fmtBodyDelta, fmtHeight, fmtLen, fmtLenDelta, fmtLenNum, fmtLift, heightParts, kgToLb, lbToKg, lenFromCm, lenToCm, lenUnitLabel, liftInputValue, liftToKg, parseNum, stoneParts, CM_PER_IN } from './units.js';
 import * as C from './calc.js';
-import { MUSCLES, exerciseById, muscleName } from './data/exercises.js';
-import { AVOID_OPTIONS, SLOTS } from './data/foods.js';
-import { advice, nextSessionId, optionsFor, repText, restText, whySets } from './plan.js';
-import { applySwap, dayTotals, filterMeals, mealLines, mealMacros, needsHalalNote, pantryLine, shoppingList, swapOptions } from './meals.js';
-import { afterBodyChange, afterProfileChange, analyseCheckin, applyCheckin, ensureCurrentWeek, mealsById, refreshMeals, refreshProgram, rescaleMeals, seedDemo, startState, targetsOf } from './engine.js';
+import { MUSCLES, allExercises, customExercises, exerciseById, muscleName, setCustomExercises } from './data/exercises.js';
+import { AVOID_OPTIONS, INGREDIENTS, SLOTS } from './data/foods.js';
+import { GUIDES } from './data/guides.js';
+import { PATTERNS, SPECS } from './data/poses.js';
+import { hasAnimation, mountAnimation, poseSVG, registerPoses } from './anim.js';
+import { CONDITIONS, DIABETES, PAIN, STRESS, blankHealth, hasHealth, healthSummary, normHealth, repRange } from './health.js';
+import { namesMatch, searchExercises } from './search.js';
+import { matchRecipes, mealIdeas, pickableIngredients } from './pantry.js';
+import { advice, nextSessionId, repText, restText, swapChoices, whySets } from './plan.js';
+import { applySwap, dayTotals, mealLines, mealMacros, needsHalalNote, pantryLine, rescaleDay, shoppingList, swapOptions } from './meals.js';
+import { afterBodyChange, afterProfileChange, allowedMeals, analyseCheckin, applyCheckin, dietOf, ensureCurrentWeek, mealsById, refreshMeals, refreshProgram, rulesOf, seedDemo, startState, targetsOf } from './engine.js';
 import { APP_VERSION, blankState, clearSaved, exportText, isStorageOK, loadState, parseBackup, saveState } from './store.js';
 import { drawWeightChart, tapeHTML } from './charts.js';
 
 const PREVIEW = typeof window !== 'undefined' && !!window.GAINLOOP_PREVIEW;
 const today = () => isoDate();
 
+registerPoses(SPECS, PATTERNS);
+
 let S = loadState();
-const ui = { setup: null, checkin: null, eatDay: weekdayIndex(isoDate()), sheet: null, installEvent: null, lastRoute: '', copyText: '' };
+const ui = { setup: null, checkin: null, eatDay: weekdayIndex(isoDate()), sheet: null, installEvent: null, lastRoute: '', copyText: '', anim: null, libFilter: 'all', libQuery: '', ideas: new Map() };
+const rules = () => rulesOf(S);
+const reduceMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+// Small still picture of an exercise (its turnaround point). The drawing only depends on the exercise, so keep it.
+const thumbCache = new Map();
+function thumb(exId) {
+  if (!hasAnimation(exId)) return '<span class="thumb thumb-none">Your own</span>';
+  if (!thumbCache.has(exId)) thumbCache.set(exId, `<span class="thumb">${poseSVG(exId, 1)}</span>`);
+  return thumbCache.get(exId);
+}
+// What an exercise needs, in a few words ('No equipment' rather than 'Nothing')
+function kitText(exId, first = false) {
+  const kit = GUIDES[exId]?.kit || [];
+  if (!kit.length) return '';
+  if (/^nothing/i.test(kit[0])) return 'No equipment';
+  return first ? kit[0] : kit.map((k, i) => (i ? lcFirst(k) : k)).join(', ');
+}
+// Health items that change one part of the plan ('train' or 'food')
+const healthFor = (area) => rules().items.filter((i) => i.areas?.includes(area));
 
 // ---------- Icons ----------
 const svg = (body) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${body}</svg>`;
@@ -191,11 +217,11 @@ function welcomeView() {
     <p class="lede">Build muscle with a plan that checks your tape measure and adjusts.</p>
     <ol class="loop">
       <li><strong>Measure</strong> your arms, chest, waist and a few more spots with a soft tape.</li>
-      <li><strong>Get your plan:</strong> targets from your frame, a training plan for your equipment and meals that follow your food rules.</li>
+      <li><strong>Get your plan:</strong> targets from your frame, training built around your equipment and the exercises you already do, and meals that fit your food rules and health.</li>
       <li><strong>Check in every two weeks.</strong> Calories and training adjust to what actually changed, and the app tells you why.</li>
     </ol>
     <div class="stack">
-      <a class="btn btn-primary" href="#setup">Set up in about 2 minutes</a>
+      <a class="btn btn-primary" href="#setup">Set up in about 3 minutes</a>
       <button class="btn" data-act="demo">Explore with example data</button>
       <a class="btn-link" href="#restore">Restore a backup</a>
     </div>
@@ -210,20 +236,24 @@ function newDraft(mode) {
     const p = S.profile;
     return { ...p, age: C.ageNow(p, today()), diet: { ...p.diet, avoid: [...(p.diet.avoid || [])] }, kg: C.currentWeight(S.weights, today()), frame: {}, cm: {} };
   }
-  return { name: '', sex: 'male', age: '', heightCm: null, kg: null, experience: 'beginner', days: 3, minutes: 60, equipment: 'gym', pullupBar: false, goal: 'build', activity: 'medium', diet: { style: 'any', halal: false, avoid: [], dislikes: '' }, frame: {}, cm: {} };
+  return { name: '', sex: 'male', age: '', heightCm: null, kg: null, experience: 'beginner', days: 3, minutes: 60, equipment: 'gym', pullupBar: false, goal: 'build', activity: 'medium', diet: { style: 'any', halal: false, avoid: [], dislikes: '' }, health: blankHealth(), myEx: [], customEx: [], frame: {}, cm: {} };
 }
 
-const SETUP_STEPS = ['You', 'Training', 'Goal', 'Food', 'Measure'];
+// Health and the exercises you already do have their own screens once you're set up, so editing skips them
+const NEW_STEPS = ['about', 'health', 'training', 'exercises', 'goal', 'food', 'measure'];
+const EDIT_STEPS = ['about', 'training', 'goal', 'food'];
+const stepsFor = (mode) => (mode === 'edit' ? EDIT_STEPS : NEW_STEPS);
 
 function setupView(mode = 'new') {
   if (!ui.setup || ui.setup.mode !== mode) ui.setup = { mode, step: 0, draft: newDraft(mode), error: '' };
   const st = ui.setup;
   const d = st.draft;
-  const steps = mode === 'edit' ? SETUP_STEPS.slice(0, 4) : SETUP_STEPS;
+  const steps = stepsFor(mode);
+  const name = steps[st.step];
   const last = st.step === steps.length - 1;
   let body = '';
 
-  if (st.step === 0) {
+  if (name === 'about') {
     body = `
       <h1 class="title">About you</h1>
       <p class="muted">Used for your calories, body fat estimate and targets.</p>
@@ -234,7 +264,13 @@ function setupView(mode = 'new') {
       ${field(U().len === 'in' ? 'height-ft' : 'height', 'Height', heightControl('height', d.heightCm))}
       ${mode === 'new' ? `<fieldset class="field"><legend>Weigh yourself in</legend>${seg('u-body', [['kg', 'kg'], ['st', 'stone'], ['lb', 'lb']], U().body, 'units-setup')}</fieldset>
       ${field(U().body === 'st' ? 'weight-st' : 'weight', 'Weight today', bodyWeightControl('weight', d.kg))}` : ''}`;
-  } else if (st.step === 1) {
+  } else if (name === 'health') {
+    body = `
+      <h1 class="title">Health</h1>
+      <p class="muted">Optional. If any of these apply, your training and meals are adjusted and you get safety notes. If none do, tap Continue.</p>
+      ${healthFields(d.health || blankHealth())}
+      <p class="fine">General guidance, not medical advice: your doctor’s or care team’s advice comes first. This stays on your phone.</p>`;
+  } else if (name === 'training') {
     body = `
       <h1 class="title">Training</h1>
       <fieldset class="field"><legend>Lifting experience</legend>${choices('experience', Object.entries(C.EXPERIENCE).map(([k, v]) => [k, v.name, v.desc]), d.experience)}</fieldset>
@@ -242,18 +278,23 @@ function setupView(mode = 'new') {
       <fieldset class="field"><legend>Time per session</legend>${seg('minutes', [45, 60, 75, 90].map((n) => [n, `${n} min`]), d.minutes)}</fieldset>
       <fieldset class="field"><legend>Where you train</legend>${choices('equipment', [['gym', 'A gym', 'Barbells, dumbbells, cables and machines.'], ['home', 'Home with dumbbells', 'A set of dumbbells and a bench.'], ['bw', 'Bodyweight only', 'No equipment. A backpack and a chair help.']], d.equipment)}</fieldset>
       <div class="field check"><input type="checkbox" id="pullupBar" name="pullupBar"${d.pullupBar ? ' checked' : ''}><label for="pullupBar">I have a pull-up bar at home</label></div>`;
-  } else if (st.step === 2) {
+  } else if (name === 'exercises') {
+    body = `
+      <h1 class="title">Exercises you already do</h1>
+      <p class="muted">Optional. Add the ones you do now and your plan keeps them, building everything else around them. Any name works, like “bench”, “RDL” or “pull-ups”.</p>
+      ${pickerHTML('setup')}`;
+  } else if (name === 'goal') {
     const lean = C.leanAllowed({ ...d, ageSetOn: today() }, d.kg || C.currentWeight(S.weights, today()), today());
     body = `
       <h1 class="title">Goal</h1>
       <fieldset class="field"><legend>What you want</legend>${choices('goal', Object.entries(C.GOALS).map(([k, v]) => [k, v.name, v.desc]), lean.ok || d.goal !== 'lean' ? d.goal : 'build', lean.ok ? {} : { lean: lean.why })}</fieldset>
       <fieldset class="field"><legend>Outside training, your day is</legend>${choices('activity', Object.entries(C.ACTIVITY).map(([k, v]) => [k, v.name]), d.activity)}</fieldset>`;
-  } else if (st.step === 3) {
+  } else if (name === 'food') {
     body = `
       <h1 class="title">Food rules</h1>
       <p class="muted">Meals that break a rule are never put in your plan.</p>
       ${dietFields(d.diet)}`;
-  } else if (st.step === 4) {
+  } else if (name === 'measure') {
     body = `
       <h1 class="title">Measurements</h1>
       <p class="muted">A soft tape and five minutes. Skip any you can't do now and add them later.</p>
@@ -275,7 +316,7 @@ function setupView(mode = 'new') {
       ${st.error ? `<p class="error" role="alert">${esc(st.error)}</p>` : ''}
       <div class="form-actions">
         <button class="btn btn-primary" type="submit">${last ? (mode === 'edit' ? 'Save changes' : 'Make my plan') : 'Continue'}</button>
-        ${st.step === 4 ? '<button class="btn-link" type="button" data-act="setup-skip">Skip measurements for now</button>' : ''}
+        ${name === 'measure' ? '<button class="btn-link" type="button" data-act="setup-skip">Skip measurements for now</button>' : ''}
       </div>
     </form>
   </section>`;
@@ -317,7 +358,8 @@ function captureSetup(form, strict) {
   const d = st.draft;
   st.error = '';
   const fail = (msg) => { if (strict) { st.error = msg; return false; } return true; };
-  if (st.step === 0) {
+  const name = stepsFor(st.mode)[st.step];
+  if (name === 'about') {
     d.name = fval(form, 'firstname').trim().slice(0, 40);
     d.sex = fval(form, 'sex') || d.sex;
     const age = parseNum(fval(form, 'age'));
@@ -328,20 +370,22 @@ function captureSetup(form, strict) {
     if (!age || age < 13 || age > 100) return fail('Enter your age. Gainloop is for ages 13 and up.');
     if (!h || h < 120 || h > 230) return fail('Enter a height between 120 and 230 cm (about 4 to 7.5 ft).');
     if (st.mode === 'new' && (!d.kg || d.kg < 30 || d.kg > 250)) return fail('Enter your weight today.');
-  } else if (st.step === 1) {
+  } else if (name === 'health') {
+    d.health = readHealth(form);
+  } else if (name === 'training') {
     d.experience = fval(form, 'experience') || d.experience;
     d.days = Number(fval(form, 'days') || d.days);
     d.minutes = Number(fval(form, 'minutes') || d.minutes);
     d.equipment = fval(form, 'equipment') || d.equipment;
     d.pullupBar = fchecked(form, 'pullupBar');
-  } else if (st.step === 2) {
+  } else if (name === 'goal') {
     d.goal = fval(form, 'goal') || d.goal;
     d.activity = fval(form, 'activity') || d.activity;
     const lean = C.leanAllowed({ ...d, ageSetOn: today() }, d.kg || C.currentWeight(S.weights, today()), today());
     if (d.goal === 'lean' && !lean.ok) d.goal = 'build';
-  } else if (st.step === 3) {
+  } else if (name === 'food') {
     d.diet = readDiet(form);
-  } else if (st.step === 4) {
+  } else if (name === 'measure') {
     for (const s of C.FRAME_SITES) d.frame[s.id] = readLen(form, `m-${s.id}`);
     for (const s of C.sitesFor(d.sex)) d.cm[s.id] = readLen(form, `m-${s.id}`);
   }
@@ -356,7 +400,11 @@ function finishSetup(withMeasures) {
   S.profile = {
     name: d.name, sex: d.sex, age: Number(d.age), ageSetOn: t, heightCm: round(d.heightCm, 1), experience: d.experience, goal: d.goal,
     days: d.days, minutes: d.minutes, equipment: d.equipment, pullupBar: d.pullupBar, activity: d.activity, diet: d.diet,
+    health: normHealth(d.health),
   };
+  S.customExercises = [...(d.customEx || [])];
+  S.myExercises = [...(d.myEx || [])];
+  setCustomExercises(S.customExercises);
   S.weights = [{ d: t, kg: round(d.kg, 2) }];
   if (withMeasures) {
     if (d.frame.wrist && d.frame.ankle) S.frame = { wrist: round(d.frame.wrist, 1), ankle: round(d.frame.ankle, 1), d: t };
@@ -417,6 +465,13 @@ function todayView() {
   const prio = (prog.priorities || []).filter((x) => x.source === 'tape');
   const progress = C.siteProgress(S);
   const install = !PREVIEW && !isStandalone() && !S.installDismissed && (ui.installEvent || isIOS());
+  const r = rules();
+  // "Check with your doctor first" notes stay on Today until you tick them off, and come back if they change
+  const ackKey = r.checkFirst.join('|');
+  const healthCard = r.checkFirst.length && S.healthAck !== ackKey
+    ? `<section class="banner banner-warn health-banner"><div><p><strong>Before you start</strong></p><ul class="notes">${r.checkFirst.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
+        <div class="banner-actions"><button class="btn btn-small" data-act="health-ack">Got it</button><a class="link" href="#health">Health notes</a></div></section>`
+    : '';
 
   const checkinCard = status.due
     ? `<section class="card card-tape">
@@ -431,7 +486,8 @@ function todayView() {
         <div class="card-top"><h2 class="h3">${doneToday.length ? 'Next time' : 'Next workout'}</h2><span class="muted">about ${next.minutes} min</span></div>
         ${doneToday.length ? `<p class="done-line">${I.check} Done today: ${esc(doneToday.join(', '))}</p>` : ''}
         <p class="big-name">${esc(next.name)}</p>
-        <p class="muted">${next.slots.slice(0, 4).map((sl) => exerciseById(sl.ex).name).join(', ')}${next.slots.length > 4 ? ` and ${next.slots.length - 4} more` : ''}</p>
+        <p class="muted">${next.slots.slice(0, 4).map((sl) => esc(exerciseById(sl.ex)?.name || '')).join(', ')}${next.slots.length > 4 ? ` and ${next.slots.length - 4} more` : ''}</p>
+        ${r.train.length ? `<p class="card-note">${esc(r.train[0])}</p>` : ''}
         <a class="btn ${doneToday.length || status.due ? '' : 'btn-primary'}" href="#session-${next.id}">Start ${esc(next.name)}</a>
       </section>`
     : '';
@@ -460,8 +516,8 @@ function todayView() {
   if (prio.length && progress) {
     const sites = [...new Set(prio.map((x) => x.site))];
     const parts = sites.map((site) => {
-      const r = progress.find((x) => x.site === site);
-      return `${C.siteName(site).replace(' (flexed)', '').toLowerCase()} (${fLen(r.current)} of ${fLen(r.target)})`;
+      const row = progress.find((x) => x.site === site);
+      return `${C.siteName(site).replace(' (flexed)', '').toLowerCase()} (${fLen(row.current)} of ${fLen(row.target)})`;
     });
     const muscles = prio.map((x) => muscleName(x.muscle).toLowerCase());
     const lead = sites.length > 1 ? `Your ${andList(parts)} are furthest from target.` : `Your ${parts[0]} is furthest from target.`;
@@ -478,6 +534,7 @@ function todayView() {
       <div><p class="date">${fmtDate(t, 'long')}</p><h1 class="title">${p.name ? `Hi ${esc(p.name)}` : 'Today'}</h1></div>
     </header>
     ${demoBanner()}${storageBanner()}
+    ${healthCard}
     ${checkinCard}
     ${workout}
     ${weigh}
@@ -652,6 +709,9 @@ function trainView() {
   const muscles = MUSCLES.filter((m) => prog.weekly[m.id] > 0);
   const eqName = { gym: 'gym', home: 'dumbbells at home', bw: 'bodyweight' }[p.equipment];
   const autoPri = prog.priorities.filter((x) => x.source === 'tape').map((x) => x.muscle);
+  const r = rules();
+  const mine = (prog.mine || []).filter((x) => exerciseById(x.id));
+  const trainHealth = healthFor('train');
 
   return `<header class="screen-head"><div><h1 class="title">Train</h1><p class="muted">${esc(prog.split)}, ${p.days} days a week, ${eqName}</p></div></header>
     ${demoBanner()}
@@ -663,6 +723,24 @@ function trainView() {
           <span class="row-main"><span class="row-title">${esc(s.name)}${s.id === nextId ? ' <span class="badge badge-ink">Next</span>' : ''}</span>
           <span class="fine">${plural(s.slots.length, 'exercise')}, about ${s.minutes} min${ld ? `, last done ${relDays(ld.d, today())}` : ''}</span></span>${I.next}</a></li>`;
       }).join('')}</ul>
+    </section>
+    ${r.train.length ? `<section class="section">
+      <div class="section-head"><h2 class="h2">Training safely</h2><a class="link" href="#health">Health</a></div>
+      ${trainHealth.length ? `<p class="fine">Adjusted for ${esc(andList(trainHealth.map((i) => lcFirst(i.name))))}.</p>` : ''}
+      <ul class="notes">${r.train.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+    </section>` : ''}
+    <section class="section">
+      <div class="section-head"><h2 class="h2">Exercises you already do</h2><a class="link" href="#myex">${mine.length ? 'Change' : 'Add'}</a></div>
+      ${mine.length ? `<ul class="list">${mine.map((x) => {
+        const ex = exerciseById(x.id);
+        return `<li class="row"><button class="thumb-btn" data-act="guide" data-ex="${ex.id}" aria-label="How to do ${esc(ex.name)}">${thumb(ex.id)}</button>
+          <span class="row-main"><span class="row-title">${esc(ex.name)}</span><span class="fine">${x.where.length ? `In ${esc(andList(x.where))}` : esc(x.why)}</span></span></li>`;
+      }).join('')}</ul>` : '<p class="muted">Tell Gainloop what you do now and your plan keeps those exercises, building the rest around them.</p>'}
+    </section>
+    <section class="section">
+      <ul class="list">
+        <li><a class="row row-link" href="#library"><span class="row-main"><span class="row-title">Exercise library</span><span class="fine">How to do all ${libraryCount()}, with the kit you need</span></span>${I.next}</a></li>
+      </ul>
     </section>
     <section class="section">
       <div class="section-head"><h2 class="h2">Sets a week</h2><span class="muted">tap a muscle for why</span></div>
@@ -684,7 +762,7 @@ function trainView() {
     </section>
     <section class="section">
       <h2 class="h2">How progress works</h2>
-      <p>Each exercise has a rep range. Stay at a weight until you hit the top of the range on every set, then go up. If you fall below the bottom twice, drop about 10%. Stop each set 1 or 2 reps before you'd fail.</p>
+      <p>Each exercise has a rep range. Stay at a weight until you hit the top of the range on every set, then go up. If you fall below the bottom twice, drop about 10%. Stop each set ${r.stopShort || '1 or 2'} reps before you'd fail.</p>
     </section>`;
 }
 
@@ -694,24 +772,31 @@ function sessionView(sid) {
   if (!s) return `${backLink('#train', 'Train')}<p class="empty">That session isn't in your current plan.</p>`;
   const draft = S.drafts[sid] || {};
   const t = today();
+  const r = rules();
   return `${backLink('#train', 'Train')}
     <header class="screen-head"><div><h1 class="title">${esc(s.name)}</h1><p class="muted">${plural(s.slots.length, 'exercise')}, about ${s.minutes} min</p></div></header>
+    ${r.train.length ? `<details class="note session-notes"${S.sessionsDone.length ? '' : ' open'}><summary>Safety notes for your health</summary><ul class="notes">${r.train.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
     ${s.slots.map((sl, i) => {
       const ex = exerciseById(sl.ex);
+      if (!ex) return '';
       const hist = (S.exLog[ex.id] || []).filter((h) => h.d < t);
       const last = hist[hist.length - 1];
-      const adv = advice(ex, hist, fLift);
+      const rr = repRange(ex, r);
+      const adv = advice(ex, hist, fLift, rr, r.stopShort || '1 or 2');
       const dr = draft[ex.id] || {};
       const weight = dr.kg ?? (adv.kg !== null && adv.kg !== undefined ? liftInputValue(adv.kg, U().lift) : last && ex.load === 'kg' ? liftInputValue(last.kg, U().lift) : '');
       const repsLabel = ex.load === 's' ? 'Seconds' : 'Reps';
+      const sore = soreFor(ex.id);
       return `<article class="exercise${sl.priority ? ' is-priority' : ''}" data-ex="${ex.id}">
         <header class="ex-head">
           <div class="ex-title">
-            <h2 class="h3">${esc(ex.name)}</h2>
-            <p class="fine">${muscleName(sl.m)}${sl.priority ? ' (priority)' : ''}, ${sl.sets} sets of ${repText(ex)}, ${restText(ex)}</p>
+            <h2 class="h3">${esc(ex.name)}${sl.mine ? ' <span class="badge badge-line">You do this</span>' : ''}</h2>
+            <p class="fine">${muscleName(sl.m)}${sl.priority ? ' (priority)' : ''}, ${sl.sets} sets of ${repText(ex, rr)}, ${restText(ex)}</p>
           </div>
           <button class="icon-btn" data-act="swap" data-sid="${sid}" data-ex="${ex.id}" aria-label="Swap ${esc(ex.name)}">${I.swap}</button>
         </header>
+        <button class="ex-guide" data-act="guide" data-ex="${ex.id}">${thumb(ex.id)}<span class="ex-guide-text"><span>How to do it</span><span class="fine">${GUIDES[ex.id] ? esc(kitText(ex.id)) : 'Steps and a video link'}</span></span></button>
+        ${sore.length ? `<p class="warn">${I.alert} ${sl.mine ? 'This one stays because you already do it.' : Object.values(S.swaps).includes(ex.id) ? 'You swapped this one in.' : 'Nothing else fits your equipment here.'} Go lighter if your ${esc(andList(sore))} ${hurtVerb(sore)}, or swap it.</p>` : ''}
         <p class="advice">${esc(adv.text)}</p>
         ${last ? `<p class="fine">Last time, ${fmtDate(last.d, 'day')}: ${ex.load === 'kg' ? `${last.kg ? fLift(last.kg) : 'bodyweight'} × ` : ''}${last.reps.join(', ')}${ex.load === 's' ? ' s' : ''}</p>` : ''}
         <div class="log">
@@ -721,7 +806,6 @@ function sessionView(sid) {
           </div>
         </div>
         ${adv.nextEx ? `<button class="btn btn-small" data-act="swap-to" data-from="${ex.id}" data-to="${adv.nextEx}">Switch to ${esc(lcFirst(exerciseById(adv.nextEx).name))}</button>` : ''}
-        <details class="how"><summary>How to do it</summary><p>${esc(ex.cue)}</p></details>
       </article>`;
     }).join('')}
     <div class="finish-bar"><button class="btn btn-primary btn-wide" data-act="finish" data-sid="${sid}">Finish workout</button></div>`;
@@ -734,12 +818,14 @@ function eatView() {
   const n = S.nutrition;
   const week = S.mealWeek;
   const byId = mealsById(S);
-  const { allowed, hidden } = filterMeals(S.profile.diet, S.customMeals);
+  const { allowed, hidden } = allowedMeals(S);
   const di = ui.eatDay;
   const day = week.days[di];
   const tot = day ? dayTotals(day, byId) : null;
   const diet = S.profile.diet;
-  const rules = [
+  const carbs = rules().carbCounts;
+  const foodHealth = healthFor('food');
+  const ruleBits = [
     diet.style !== 'any' ? (diet.style === 'vegan' ? 'Vegan' : 'Vegetarian') : '',
     diet.halal ? 'Halal' : '',
     diet.avoid.length ? `no ${diet.avoid.map((a) => AVOID_OPTIONS.find((o) => o.id === a)?.name.toLowerCase()).join(', ')}` : '',
@@ -758,7 +844,8 @@ function eatView() {
       <button class="btn-link" data-act="info" data-topic="calories">Why these numbers</button>
     </section>
     <section class="section">
-      <div class="rules-line"><p>${rules.length ? esc(rules.join(', ').replace(/^./, (c) => c.toUpperCase())) : 'No food rules set.'}</p><a class="link" href="#rules">Edit rules</a></div>
+      <div class="rules-line"><p>${ruleBits.length ? esc(ruleBits.join(', ').replace(/^./, (c) => c.toUpperCase())) : 'No food rules set.'}</p><a class="link" href="#rules">Edit rules</a></div>
+      ${foodHealth.length ? `<div class="rules-line"><p class="fine">Adjusted for ${esc(andList(foodHealth.map((i) => lcFirst(i.name))))}${carbs ? ', with carbs shown on every meal' : ''}.</p><a class="link" href="#health">Health</a></div>` : ''}
       ${hidden.length ? `<button class="btn-link" data-act="hidden-meals">${plural(hidden.length, 'meal')} left out by your rules</button>` : ''}
       ${thin.length ? `<p class="note">Only a few ${andList(thin)} options fit your rules, so they repeat. <a class="link" href="#mealnew">Add your own meals</a> for more variety.</p>` : ''}
     </section>
@@ -770,24 +857,26 @@ function eatView() {
       return `<li><button class="meal" data-act="meal-open" data-i="${i}">
         <span class="meal-slot">${SLOTS.find((s) => s.id === e.slot).name}</span>
         <span class="meal-name">${esc(m.name)}</span>
-        <span class="meal-meta">${Math.round(mm.kcal * day.x)} kcal, ${Math.round(mm.p * day.x)} g protein${day.x !== 1 ? `, ${day.x} portions` : ''}</span>
+        <span class="meal-meta">${Math.round(mm.kcal * day.x)} kcal, ${Math.round(mm.p * day.x)} g protein${carbs ? `, ${Math.round(mm.c * day.x)} g carbs` : ''}${day.x !== 1 ? `, ${day.x} portions` : ''}</span>
       </button></li>`;
     }).join('')}</ul>
     <div class="day-total">
       ${meter('Calories', tot.kcal, n.kcal, 'kcal')}
       ${meter('Protein', tot.p, n.protein, 'g', true)}
+      ${carbs ? meter('Carbs', tot.c, n.carbs, 'g', false, true) : ''}
     </div>` : '<p class="empty">No meals fit all of your rules. Loosen a rule or add your own meals.</p>'}
     <div class="actions-row">
+      <a class="btn btn-primary" href="#pantry">Cook with what you have</a>
       <button class="btn" data-act="meals-reshuffle">New meal ideas</button>
       <a class="btn" href="#mealnew">Add your own meal</a>
     </div>`;
 }
 
-function meter(label, value, target, unit, atLeast = false) {
+function meter(label, value, target, unit, atLeast = false, atMost = false) {
   const ratio = target ? value / target : 0;
-  const close = atLeast ? ratio >= 0.95 : Math.abs(ratio - 1) <= 0.05;
+  const close = atLeast ? ratio >= 0.95 : atMost ? ratio <= 1.05 : Math.abs(ratio - 1) <= 0.05;
   return `<div class="meter">
-    <div class="meter-head"><span>${label}</span><span><strong>${fmtInt(value)} ${unit}</strong> ${atLeast ? `aim for ${fmtInt(target)}+` : `of ${fmtInt(target)}`}</span></div>
+    <div class="meter-head"><span>${label}</span><span><strong>${fmtInt(value)} ${unit}</strong> ${atLeast ? `aim for ${fmtInt(target)}+` : atMost ? `up to about ${fmtInt(target)}` : `of ${fmtInt(target)}`}</span></div>
     <div class="meter-track"><span class="meter-fill${close ? ' ok' : ''}" style="width:${Math.min(100, ratio * 100)}%"></span></div>
   </div>`;
 }
@@ -836,7 +925,10 @@ function mealNewView() {
       <fieldset class="field"><legend>Contains</legend>${chips('mn-flags', FLAG_OPTIONS, [])}</fieldset>
       <div class="form-actions"><button class="btn btn-primary" type="submit">Add meal</button></div>
     </form>
-    ${S.customMeals.length ? `<section class="section"><h2 class="h2">Your meals</h2><ul class="list">${S.customMeals.map((m) => `<li class="row"><span class="row-main">${esc(m.name)}<span class="fine"> ${SLOTS.find((s) => s.id === m.slot).name}, ${m.kcal} kcal, ${m.p} g protein</span></span><button class="icon-btn" data-act="del-meal" data-id="${m.id}" aria-label="Delete ${esc(m.name)}">${I.close}</button></li>`).join('')}</ul></section>` : ''}`;
+    ${S.customMeals.length ? `<section class="section"><h2 class="h2">Your meals</h2><ul class="list">${S.customMeals.map((m) => {
+      const mm = mealMacros(m);
+      return `<li class="row"><span class="row-main">${esc(m.name)}<span class="fine"> ${SLOTS.find((s) => s.id === m.slot)?.name || ''}${m.gen ? ' from your foods' : ''}, ${Math.round(mm.kcal)} kcal, ${Math.round(mm.p)} g protein a portion</span></span><button class="icon-btn" data-act="del-meal" data-id="${m.id}" aria-label="Delete ${esc(m.name)}">${I.close}</button></li>`;
+    }).join('')}</ul></section>` : ''}`;
 }
 
 function rulesView() {
@@ -864,7 +956,8 @@ function youView() {
   ];
   return `<header class="screen-head"><h1 class="title">${p.name ? esc(p.name) : 'You'}</h1><a class="btn btn-small" href="#profile">Edit details</a></header>
     ${demoBanner()}
-    <section class="section"><ul class="list">${rows.map(([k, v]) => `<li class="row"><span class="row-label">${k}</span><span class="row-main">${esc(v)}</span></li>`).join('')}</ul></section>
+    <section class="section"><ul class="list">${rows.map(([k, v]) => `<li class="row"><span class="row-label">${k}</span><span class="row-main">${esc(v)}</span></li>`).join('')}
+      <li><a class="row row-link" href="#health"><span class="row-label">Health</span><span class="row-main">${esc(healthSummary(p.health))}</span>${I.next}</a></li></ul></section>
     <section class="section">
       <h2 class="h2">Units</h2>
       <fieldset class="field compact"><legend>Lengths</legend>${seg('pu-len', [['cm', 'cm'], ['in', 'inches']], U().len, 'units')}</fieldset>
@@ -894,7 +987,7 @@ function youView() {
     <section class="section">
       <button class="btn btn-danger" data-act="reset">Delete all my data</button>
     </section>
-    <p class="fine footer-note">Gainloop ${APP_VERSION}. Not medical advice. If you have a health condition or are under 18, check with a doctor or a qualified coach before changing your diet.</p>`;
+    <p class="fine footer-note">Gainloop ${APP_VERSION}. Not medical advice. If you have a health condition or are under 18, check with a doctor or a qualified coach before changing your diet or training.</p>`;
 }
 
 function restoreView() {
@@ -936,11 +1029,29 @@ function mathsView() {
       <p>Every two weeks, a check-in compares how fast your 7-day average weight is moving with the target pace: about 1.25% of body weight a month for newer lifters, 0.75% with some experience and 0.4% when experienced. The first change waits until you have about 3 weeks of weigh-ins. If you're more than 0.1 kg a week off pace (or a third of the target pace, if that's bigger), calories move by half the gap, at most 250 kcal at a time. If weight is on pace but your waist is growing while arms and chest aren't, calories come down 100.</p>
       <h2 class="h2">Training</h2>
       <p>Weekly sets start at 10 to 14 per major muscle depending on experience, then get fitted to your days and session length. Progress uses double progression: stay at a weight until you reach the top of the rep range on every set, then go up.</p>
+      <h2 class="h2">Exercises you already do</h2>
+      <p>Your exercises go to the front of the list for their muscle, so they’re picked first wherever your equipment allows. If one doesn’t fit its usual place, like a chin-up when your biceps get curls, it takes the place of one of the planner’s own picks for that muscle. If you do more exercises for a muscle than it has places in your week, the extras are left out and the app says why.</p>
+      <p>Exercises you add yourself get a standard rep range for how you track them: 8 to 12 reps with weights, 8 to 15 with bodyweight, or 20 to 60 seconds for holds.</p>
+      <h2 class="h2">Cooking with what you have</h2>
+      <p>Meal ideas are put together on your phone from the foods you tick: a protein food, a carb and vegetables for lunch and dinner, and simpler combinations for breakfast and snacks. Portions are set for one serving, then scaled with the rest of the day to hit your calories. Your food rules and health rules apply to every idea, and recipes from the library show up too when you have everything, or are only one or two foods short.</p>
+      <h2 class="h2">Health conditions</h2>
+      <p>These follow general guidance and are deliberately cautious. Your doctor’s or care team’s advice comes first.</p>
+      <ul class="notes">
+        <li><strong>Diabetes:</strong> carbs are capped at about 45% of calories, a moderate limit, since there’s no single right amount. Protein, then fat, make up the rest. Meals with added sugar are left out, the planner leans toward meals where carbs are no more than half the calories, and every meal shows its carbs. You’re reminded to check your glucose before training, because training can lower it, especially if you take insulin or a sulfonylurea.</li>
+        <li><strong>High blood pressure and heart conditions:</strong> every set is at least 8 reps (10 with a heart condition), stopping 2 to 3 reps short of failure, with reminders not to hold your breath. With high blood pressure, meals built on salty cheese are swapped out while each meal slot keeps at least 3 options.</li>
+        <li><strong>Kidney disease:</strong> protein is set to 0.8 g per kg of body weight, the amount the KDIGO kidney guideline suggests for adults with stage 3 to 5 chronic kidney disease who aren’t on dialysis, and protein shakes are left out.</li>
+        <li><strong>Coeliac disease:</strong> gluten is a hard rule, including standard oats.</li>
+        <li><strong>High cholesterol:</strong> meals built on fatty cheese, paneer or lamb are swapped out while there are other options.</li>
+        <li><strong>Pain:</strong> exercises that tend to load your lower back, knees or shoulders are left out whenever that muscle has another option. Ones you already do stay in, with a reminder to go lighter.</li>
+      </ul>
       <h2 class="h2">Sources</h2>
       <ul class="sources">
         <li><a href="https://weighttraining.nz/cb_calculator.php" target="_blank" rel="noopener">Casey Butt lean mass formula</a></li>
         <li><a href="https://mennohenselmans.com/ffmi-calculator/" target="_blank" rel="noopener">Menno Henselmans on FFMI and the formula's limits</a></li>
         <li><a href="https://pubmed.ncbi.nlm.nih.gov/2305711/" target="_blank" rel="noopener">Mifflin-St Jeor equation (1990)</a></li>
+        <li><a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5317029/" target="_blank" rel="noopener">Key points from the American Diabetes Association’s exercise guidance</a></li>
+        <li><a href="https://professional.heart.org/en/science-news/resistance-exercise-training-in-individuals-with-and-without-cardiovascular-disease-2023-update" target="_blank" rel="noopener">American Heart Association: resistance training with and without heart disease (2023)</a></li>
+        <li><a href="https://kdigo.org/guidelines/ckd-evaluation-and-management/" target="_blank" rel="noopener">KDIGO 2024 guideline for chronic kidney disease</a></li>
       </ul>
     </section>`;
 }
@@ -991,6 +1102,258 @@ function checkinView() {
     </div>`;
 }
 
+// ----- Exercise guides, your exercises and the library -----
+
+function soreFor(exId) {
+  const r = rules();
+  return PAIN.filter((p) => r.pain.includes(p.id) && STRESS[p.id]?.includes(exId)).map((p) => p.word);
+}
+// 'your knees hurt' but 'your lower back hurts'
+const sorePlural = (sore) => sore.length > 1 || /s$/.test(sore[0] || '');
+const hurtVerb = (sore) => (sorePlural(sore) ? 'hurt' : 'hurts');
+
+function guideSheet(sh) {
+  const ex = exerciseById(sh.ex);
+  if (!ex) return '<p>That exercise isn’t in the library any more.</p>';
+  const g = GUIDES[ex.id];
+  const rr = repRange(ex, rules());
+  const also = (g?.also || []).map((m) => muscleName(m).toLowerCase());
+  const mine = (S.myExercises || []).includes(ex.id);
+  const sore = soreFor(ex.id);
+  const fromSwap = sh.back?.type === 'swap' ? sh.back : null;
+  const stage = hasAnimation(ex.id)
+    ? `<div class="anim-stage" role="img" aria-label="Animated figure doing ${esc(lcFirst(ex.name))}"><div class="anim-host" data-anim="${ex.id}"></div></div>`
+    : '<div class="anim-stage anim-none"><p>There’s no animation for exercises you add yourself. The video link below shows how others do it.</p></div>';
+  const actions = fromSwap
+    ? `<button class="btn btn-primary" data-act="swap-to" data-from="${fromSwap.ex}" data-to="${ex.id}">Use this instead</button>
+       <button class="btn" data-act="sheet-back">Back to the list</button>`
+    : (S.profile ? `<button class="btn" data-act="mine-toggle" data-id="${ex.id}">${mine ? 'Remove from exercises I already do' : 'Add to exercises I already do'}</button>` : '');
+  return `<div class="guide">${stage}
+    <div class="guide-bar"><p class="guide-meta"><span>${repText(ex, rr)}</span><span>${restText(ex)}</span></p>${hasAnimation(ex.id) ? `<button class="anim-toggle" data-act="anim-toggle">${reduceMotion() ? 'Play' : 'Pause'}</button>` : ''}</div>
+    <p class="guide-works">Works your ${muscleName(ex.m).toLowerCase()}${also.length ? `, plus your ${andList(also)}` : ''}.</p>
+    ${sore.length ? `<p class="note">${I.alert} You said your ${andList(sore)} ${hurtVerb(sore)}. This one can load ${sorePlural(sore) ? 'them' : 'it'}, so go lighter, or swap it for something else if it hurts.</p>` : ''}
+    ${g ? `<h3 class="h3">You’ll need</h3><ul class="kit-list">${g.kit.map((k) => `<li>${esc(k)}</li>`).join('')}</ul>
+    <h3 class="h3">How to do it</h3><ol class="steps-list">${g.how.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>` : ''}
+    ${ex.cue ? `<p class="note"><strong>Tip:</strong> ${esc(ex.cue)}</p>` : ''}
+    <div class="form-actions">
+      ${actions}
+      <a class="btn-link" href="https://www.youtube.com/results?search_query=${encodeURIComponent(`how to do ${ex.name}`)}" target="_blank" rel="noopener">Watch videos of it on YouTube</a>
+    </div>
+  </div>`;
+}
+
+// The exercise picker is used in setup (ctx 'setup', saved at the end) and on its own screen (ctx 'state')
+function pickerData(ctx) {
+  if (ctx === 'setup' && ui.setup) {
+    const d = ui.setup.draft;
+    d.myEx ||= [];
+    d.customEx ||= [];
+    return { mine: d.myEx, customs: d.customEx };
+  }
+  return { mine: S.myExercises, customs: S.customExercises };
+}
+
+function syncCustoms() {
+  const extra = ui.setup?.draft?.customEx || [];
+  setCustomExercises([...(S.customExercises || []), ...extra.filter((c) => !(S.customExercises || []).some((x) => x.id === c.id))]);
+}
+
+function pickedHTML(ctx) {
+  const { mine } = pickerData(ctx);
+  if (!mine.length) return '<p class="empty">None added yet.</p>';
+  const report = ctx === 'state' ? new Map((S.program?.mine || []).map((x) => [x.id, x])) : new Map();
+  return `<ul class="list">${mine.map((id) => {
+    const ex = exerciseById(id);
+    if (!ex) return '';
+    const rep = report.get(id);
+    const where = rep ? (rep.where.length ? `In ${andList(rep.where)}` : rep.why) : muscleName(ex.m);
+    return `<li class="row"><button class="thumb-btn" data-act="guide" data-ex="${id}" aria-label="How to do ${esc(ex.name)}">${thumb(id)}</button><span class="row-main"><span class="row-title">${esc(ex.name)}</span><span class="fine">${esc(where)}</span></span><button class="icon-btn" data-act="ex-remove" data-id="${id}" data-ctx="${ctx}" aria-label="Remove ${esc(ex.name)}">${I.close}</button></li>`;
+  }).join('')}</ul>`;
+}
+
+function resultsHTML(q, ctx) {
+  const query = String(q || '').trim();
+  if (!query) return '';
+  const { mine } = pickerData(ctx);
+  const res = searchExercises(query, { limit: 6 });
+  const exact = res.some((e) => namesMatch(query, e));
+  return res.map((e) => `<li><button class="row row-button" data-act="ex-add" data-id="${e.id}" data-ctx="${ctx}">${thumb(e.id)}<span class="row-main"><span class="row-title">${esc(e.name)}</span><span class="fine">${muscleName(e.m)}</span></span>${mine.includes(e.id) ? `<span class="added">${I.check} Added</span>` : I.plus}</button></li>`).join('')
+    + (exact ? '' : `<li><button class="row row-button" data-act="ex-custom" data-name="${esc(query)}" data-ctx="${ctx}"><span class="row-main"><span class="row-title">Add “${esc(query)}” as your own exercise</span><span class="fine">For anything that isn’t in the list</span></span>${I.plus}</button></li>`);
+}
+
+function pickerHTML(ctx) {
+  return `<div class="field"><label for="ex-q">Search exercises</label><input id="ex-q" type="search" autocomplete="off" enterkeyhint="search" placeholder="bench press, squats, pull-ups" data-live="ex-search" data-ctx="${ctx}"></div>
+    <ul class="list picker-results" id="ex-results" aria-live="polite"></ul>
+    <h2 class="h3 picked-head">Your exercises</h2>
+    <div id="ex-picked">${pickedHTML(ctx)}</div>`;
+}
+
+function refreshPicker(ctx) {
+  const q = document.getElementById('ex-q');
+  const res = document.getElementById('ex-results');
+  const picked = document.getElementById('ex-picked');
+  if (res && q) res.innerHTML = resultsHTML(q.value, ctx);
+  if (picked) picked.innerHTML = pickedHTML(ctx);
+}
+
+function customExSheet(sh) {
+  return `<form data-form="custom-ex" data-ctx="${sh.ctx}" novalidate>
+    ${field('ce-name', 'Name', `<input id="ce-name" name="ce-name" maxlength="50" value="${esc(sh.name || '')}">`)}
+    <fieldset class="field"><legend>Main muscle it works</legend>${seg('ce-m', MUSCLES.map((m) => [m.id, m.name]), sh.m || 'chest')}</fieldset>
+    <fieldset class="field"><legend>How you track it</legend>${seg('ce-load', [['kg', 'Weight and reps'], ['bw', 'Reps only'], ['s', 'Seconds']], 'kg')}</fieldset>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Add exercise</button></div>
+  </form>`;
+}
+
+function myExView() {
+  return `${backLink('#train', 'Train')}
+    <header class="screen-head"><h1 class="title">Exercises you already do</h1></header>
+    <p class="muted">Your plan keeps these where your equipment and session length allow, and builds the rest around them.</p>
+    ${pickerHTML('state')}
+    <p class="fine">Changing this list rebuilds your sessions. The weights and reps you’ve logged are kept.</p>`;
+}
+
+const libraryCount = () => allExercises().filter((e) => !e.custom).length;
+
+function libraryList(q, f) {
+  let list = String(q || '').trim() ? searchExercises(q, { limit: 60 }) : allExercises();
+  if (f && f !== 'all') list = list.filter((e) => e.m === f);
+  if (!list.length) return '<li class="empty">No exercises match.</li>';
+  return list.map((e) => `<li><button class="row row-button" data-act="guide" data-ex="${e.id}">${thumb(e.id)}<span class="row-main"><span class="row-title">${esc(e.name)}</span><span class="fine">${muscleName(e.m)}${GUIDES[e.id] ? `, ${esc(lcFirst(kitText(e.id, true)))}` : ', your own'}</span></span>${I.next}</button></li>`).join('');
+}
+
+function libraryView() {
+  return `${backLink('#train', 'Train')}
+    <header class="screen-head"><div><h1 class="title">Exercise library</h1><p class="muted">${libraryCount()} exercises, each with how to do it${customExercises().length ? `, plus ${customExercises().length} of your own` : ''}</p></div></header>
+    <div class="field compact"><input id="lib-q" type="search" autocomplete="off" aria-label="Search exercises" placeholder="Search by name or muscle" value="${esc(ui.libQuery)}" data-live="lib-search"></div>
+    <div class="filter-row">${seg('lib-m', [['all', 'All'], ...MUSCLES.map((m) => [m.id, m.name])], ui.libFilter, 'lib-filter')}</div>
+    <ul class="list" id="lib-list">${libraryList(ui.libQuery, ui.libFilter)}</ul>`;
+}
+
+// ----- Cook with what you have -----
+
+function useLabel() {
+  return ui.eatDay === weekdayIndex(today()) ? 'today' : dayLong(ui.eatDay);
+}
+
+function ideaCard(m, slot, kind, missing = []) {
+  const mm = mealMacros(m);
+  if (kind === 'gen') ui.ideas.set(m.id, m);
+  return `<article class="idea">
+    <p class="idea-name">${esc(m.name)}</p>
+    <p class="idea-meta">${kind === 'gen' ? 'Made from your foods' : 'Recipe'}, ${Math.round(mm.kcal)} kcal, ${Math.round(mm.p)} g protein${rules().carbCounts ? `, ${Math.round(mm.c)} g carbs` : ''} a portion</p>
+    ${missing.length ? `<p class="need">You’d also need ${esc(andList(missing.map((id) => lcFirst(INGREDIENTS[id].name))))}</p>` : ''}
+    <p class="idea-items">${esc(mealLines(m, 1).join(', '))}</p>
+    ${m.how ? `<details class="how"><summary>How to make it</summary><p>${esc(m.how)}</p></details>` : ''}
+    <div class="idea-actions"><button class="btn btn-small" data-act="pantry-use" data-kind="${kind}" data-id="${m.id}" data-slot="${slot}">Use for ${esc(useLabel())}’s ${slot}</button></div>
+  </article>`;
+}
+
+function pantryResults() {
+  const have = S.pantry.have;
+  ui.ideas = new Map();
+  ui.pantryCount = 0;
+  if (!have.length) return '<p class="empty">Tick a few foods above to see what you can make.</p>';
+  const diet = dietOf(S);
+  const r = rules();
+  const { allowed } = allowedMeals(S);
+  return `<h2 class="h2">What you can make</h2>${SLOTS.map((slot) => {
+    const ideas = mealIdeas(slot.id, have, diet, r, 2);
+    const recipes = matchRecipes(allowed, have, slot.id).filter((x) => !x.meal.gen && !ideas.some((i) => i.id === x.meal.id)).slice(0, 2);
+    ui.pantryCount += ideas.length + recipes.length;
+    const hint = slot.id === 'snack' ? 'Add something like yogurt, eggs, tuna or fruit.' : slot.id === 'breakfast' ? 'Add eggs, oats with milk, or yogurt.' : 'Add a protein food, like chicken, eggs, tofu, fish or beans.';
+    return `<section class="slot-head"><h3 class="h3">${slot.name}</h3>
+      ${ideas.length || recipes.length ? `<div class="ideas">${ideas.map((m) => ideaCard(m, slot.id, 'gen')).join('')}${recipes.map((x) => ideaCard(x.meal, slot.id, 'recipe', x.missing)).join('')}</div>` : `<p class="empty">Nothing yet. ${hint}</p>`}
+    </section>`;
+  }).join('')}`;
+}
+
+const pantryBarText = () => (ui.pantryCount ? `See ${plural(ui.pantryCount, 'meal idea')}` : '');
+
+// After ticking a food: redraw the ideas without redrawing the ticks, so focus and scroll stay put
+function updatePantry() {
+  const box = document.getElementById('pantry-results');
+  if (box) box.innerHTML = pantryResults();
+  const clear = document.querySelector('[data-act="pantry-clear"]');
+  if (clear) clear.hidden = !S.pantry.have.length;
+  const sum = document.getElementById('have-summary');
+  if (sum) sum.textContent = haveSummary();
+  const bar = document.getElementById('pantry-bar');
+  if (bar) {
+    bar.hidden = !ui.pantryCount;
+    bar.querySelector('button').textContent = pantryBarText();
+  }
+}
+
+function haveSummary() {
+  const names = S.pantry.have.filter((id) => INGREDIENTS[id]).map((id) => lcFirst(INGREDIENTS[id].name));
+  if (!names.length) return 'Nothing ticked yet';
+  return names.length > 4 ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more` : andList(names);
+}
+
+function pantryView() {
+  const groups = pickableIngredients(dietOf(S), rules());
+  const have = S.pantry.have;
+  const results = pantryResults();
+  return `${backLink('#eat', 'Eat')}
+    <header class="screen-head"><h1 class="title">Cook with what you have</h1></header>
+    <p class="muted">Tick the foods you have or can easily get. You’ll get meal ideas made from them, sized to your calories and following your food rules${rules().items.length ? ' and health' : ''}.</p>
+    <details class="food-picker"${have.length ? '' : ' open'}>
+      <summary><span class="row-title">Your foods</span><span class="fine" id="have-summary">${esc(haveSummary())}</span></summary>
+      ${groups.map((g) => `<section class="food-group"><h2 class="h3">${g.group}</h2><div class="chips">${g.items.map((it) => `<input type="checkbox" id="pf-${it.id}" value="${it.id}" data-change="pantry"${have.includes(it.id) ? ' checked' : ''}><label for="pf-${it.id}">${esc(it.name)}</label>`).join('')}</div></section>`).join('')}
+      <p class="fine pantry-foot">Oil, garlic, spices, herbs and lemon are assumed. Foods your rules leave out aren’t listed. <button class="btn-link" data-act="pantry-clear"${have.length ? '' : ' hidden'}>Untick everything</button></p>
+    </details>
+    <div id="pantry-results">${results}</div>
+    <div class="finish-bar pantry-bar" id="pantry-bar"${ui.pantryCount ? '' : ' hidden'}><button class="btn btn-primary btn-wide" data-act="pantry-show">${pantryBarText()}</button></div>`;
+}
+
+// The "See meal ideas" bar is for when the ideas are below the screen; it hides once they're in view
+let pantryIO = null;
+function watchPantryBar() {
+  pantryIO?.disconnect();
+  pantryIO = null;
+  const res = document.getElementById('pantry-results');
+  const bar = document.getElementById('pantry-bar');
+  if (!res || !bar || typeof IntersectionObserver === 'undefined') return;
+  pantryIO = new IntersectionObserver(([e]) => bar.classList.toggle('away', e.isIntersecting || e.boundingClientRect.top < 0));
+  pantryIO.observe(res);
+}
+
+// ----- Health -----
+
+function healthFields(h) {
+  return `
+    <fieldset class="field"><legend>Diabetes</legend>${seg('hl-diabetes', DIABETES, h.diabetes)}</fieldset>
+    <fieldset class="field"><legend>Other conditions</legend>${chips('hl-cond', CONDITIONS.map((c) => [c.id, c.name]), h.conditions)}</fieldset>
+    <fieldset class="field"><legend>Pain or an injury in your</legend>${chips('hl-pain', PAIN.map((c) => [c.id, c.name]), h.pain)}</fieldset>
+    ${field('hl-other', 'Anything else <span class="opt">optional</span>', `<input id="hl-other" name="hl-other" maxlength="120" value="${esc(h.other || '')}">`, 'Gainloop can’t adjust for this automatically, but it will remind you to check your plan with your GP.')}`;
+}
+
+function readHealth(form) {
+  return normHealth({
+    diabetes: fval(form, 'hl-diabetes') || 'none',
+    conditions: [...form.querySelectorAll('input[name="hl-cond"]:checked')].map((i) => i.value),
+    pain: [...form.querySelectorAll('input[name="hl-pain"]:checked')].map((i) => i.value),
+    other: fval(form, 'hl-other').trim(),
+  });
+}
+
+function healthView() {
+  const h = normHealth(S.profile.health);
+  const r = rules();
+  const list = (arr) => `<ul class="notes">${arr.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`;
+  return `${backLink('#you', 'You')}
+    <header class="screen-head"><h1 class="title">Health</h1></header>
+    <p class="muted">Optional, and it stays on this phone. It changes your plan and adds safety notes, but it isn’t medical advice: your doctor’s or care team’s advice comes first.</p>
+    ${r.checkFirst.length ? `<div class="banner banner-warn"><div>${list(r.checkFirst)}</div></div>` : ''}
+    ${r.items.length ? `<section class="section"><h2 class="h2">What changes in your plan</h2><ul class="health-list">${r.items.map((it) => `<li><p class="h3">${esc(it.name)}</p><p>${esc(it.changes.map((c, i) => (i ? lcFirst(c) : c)).join(', '))}.</p></li>`).join('')}</ul></section>` : ''}
+    ${r.train.length ? `<section class="section"><h2 class="h2">When you train</h2>${list(r.train)}</section>` : ''}
+    ${r.food.length ? `<section class="section"><h2 class="h2">Food</h2>${list(r.food)}</section>` : ''}
+    <section class="section"><h2 class="h2">${hasHealth(h) ? 'Your details' : 'Add health details'}</h2>
+      <form data-form="health" novalidate>${healthFields(h)}<div class="form-actions"><button class="btn btn-primary" type="submit">Save</button></div></form>
+    </section>`;
+}
+
 // ---------- Routing ----------
 
 const VIEWS = {
@@ -1013,9 +1376,18 @@ const VIEWS = {
   changes: changesView,
   maths: mathsView,
   checkin: checkinView,
+  myex: myExView,
+  library: libraryView,
+  pantry: pantryView,
+  health: healthView,
 };
 
-const TAB_OF = { today: 'today', checkin: 'today', body: 'body', measure: 'body', frame: 'body', bodyfat: 'body', train: 'train', session: 'train', eat: 'eat', shop: 'eat', mealnew: 'eat', rules: 'eat', you: 'you', profile: 'you', restore: 'you', changes: 'you', maths: 'you' };
+const TAB_OF = {
+  today: 'today', checkin: 'today', body: 'body', measure: 'body', frame: 'body', bodyfat: 'body',
+  train: 'train', session: 'train', myex: 'train', library: 'train',
+  eat: 'eat', shop: 'eat', mealnew: 'eat', rules: 'eat', pantry: 'eat',
+  you: 'you', profile: 'you', restore: 'you', changes: 'you', maths: 'you', health: 'you',
+};
 const TITLES = { today: 'Today', body: 'Body', train: 'Train', eat: 'Eat', you: 'You' };
 
 function route() {
@@ -1042,6 +1414,7 @@ function renderTabs(r) {
 }
 
 function render() {
+  syncCustoms();
   const r = route();
   const view = document.getElementById('view');
   if (S.profile && ensureCurrentWeek(S, today())) save();
@@ -1058,6 +1431,8 @@ function render() {
     document.title = r.name === 'welcome' || !h1 ? 'Gainloop' : `${h1.textContent.trim()} – Gainloop`;
   }
   drawCharts();
+  if (r.name === 'pantry') watchPantryBar();
+  else { pantryIO?.disconnect(); pantryIO = null; }
   renderSheet();
 }
 
@@ -1086,20 +1461,41 @@ function closeSheet() {
   renderSheet();
 }
 
+function stopAnimation() {
+  ui.anim?.destroy();
+  ui.anim = null;
+}
+
 function renderSheet() {
   const root = document.getElementById('sheet-root');
   if (!root) return;
   const sh = ui.sheet;
+  stopAnimation();
   document.documentElement.classList.toggle('sheet-open', !!sh);
   if (!sh) { root.innerHTML = ''; return; }
+  // keep the scroll position when the same sheet is drawn again (after a toggle, say)
+  const prev = root.querySelector('.sheet');
+  const keepScroll = prev && prev.dataset.key === sheetKey(sh) ? prev.scrollTop : 0;
   root.innerHTML = `<div class="sheet-backdrop" data-act="sheet-close"></div>
-    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" data-key="${esc(sheetKey(sh))}">
       <header class="sheet-head"><h2 id="sheet-title" class="h2">${sh.title}</h2><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.close}</button></header>
       <div class="sheet-body">${sheetBody(sh)}</div>
     </section>`;
+  const sheet = root.querySelector('.sheet');
+  if (keepScroll) sheet.scrollTop = keepScroll;
+  const stage = sheet.querySelector('[data-anim]');
+  if (stage) {
+    ui.anim = mountAnimation(stage, stage.dataset.anim, { autoplay: !reduceMotion() });
+    const btn = sheet.querySelector('[data-act="anim-toggle"]');
+    if (btn && ui.anim) btn.textContent = ui.anim.playing ? 'Pause' : 'Play';
+  }
 }
 
+const sheetKey = (sh) => `${sh.type}:${sh.ex ?? sh.i ?? ''}:${sh.mode || ''}`;
+
 function sheetBody(sh) {
+  if (sh.type === 'guide') return guideSheet(sh);
+  if (sh.type === 'custom-ex') return customExSheet(sh);
   if (sh.type === 'html') return sh.html;
   if (sh.type === 'confirm') {
     return `<p>${sh.text}</p><div class="form-actions"><button class="btn ${sh.danger ? 'btn-danger' : 'btn-primary'}" data-act="${sh.act}" data-confirmed="1"${sh.data || ''}>${sh.confirm}</button><button class="btn" data-act="sheet-close">Cancel</button></div>`;
@@ -1117,17 +1513,31 @@ function mealSheet(sh) {
   const m = byId.get(e?.id);
   if (!m) return '<p>That meal has gone.</p>';
   if (sh.mode === 'swap') {
-    const { allowed } = filterMeals(S.profile.diet, S.customMeals);
-    const opts = swapOptions(day, sh.i, allowed, targetsOf(S));
+    const { allowed } = allowedMeals(S);
+    const carbs = rules().carbCounts;
+    const meta = (mm) => `${Math.round(mm.kcal)} kcal, ${Math.round(mm.p)} g protein${carbs ? `, ${Math.round(mm.c)} g carbs` : ''} a portion`;
+    const have = S.pantry.have;
+    // From the foods you said you have: new meals made from them, then recipes you can make without shopping
+    const gen = have.length ? mealIdeas(e.slot, have, dietOf(S), rules(), 3).filter((g) => g.id !== e.id) : [];
+    for (const g of gen) ui.ideas.set(g.id, g);
+    const ready = have.length ? matchRecipes(allowed, have, e.slot).filter((x) => !x.missing.length && x.meal.id !== e.id && !gen.some((g) => g.id === x.meal.id)).slice(0, 3) : [];
+    const fromHave = gen.length || ready.length
+      ? `<h3 class="h3">From the foods you have</h3>
+        <ul class="list">${gen.map((g) => `<li><button class="row row-button" data-act="meal-swap-gen" data-id="${g.id}"><span class="row-main"><span class="row-title">${esc(g.name)}</span><span class="fine">New idea from your foods, ${meta(mealMacros(g))}</span></span>${I.next}</button></li>`).join('')}${ready.map((x) => `<li><button class="row row-button" data-act="meal-swap" data-to="${x.meal.id}"><span class="row-main"><span class="row-title">${esc(x.meal.name)}</span><span class="fine">You have everything, ${meta(x.macros)}</span></span>${I.next}</button></li>`).join('')}</ul>
+        <p class="fine"><a class="link" href="#pantry">Change your foods</a></p>`
+      : `<p class="note">${have.length ? 'Nothing for this meal from the foods you ticked yet.' : 'Tell Gainloop what food you have and it suggests meals you can make with it.'} <a class="link" href="#pantry">${have.length ? 'Add more foods' : 'Pick your foods'}</a></p>`;
+    const opts = swapOptions(day, sh.i, allowed, targetsOf(S)).filter((o) => !gen.some((g) => g.id === o.meal.id) && !ready.some((x) => x.meal.id === o.meal.id));
     return `<p class="muted">Swapping changes portion sizes for the day so you still hit your calories.</p>
-      <ul class="list">${opts.map((o) => `<li><button class="row row-button" data-act="meal-swap" data-to="${o.meal.id}"><span class="row-main">${esc(o.meal.name)}<span class="fine"> ${Math.round(o.macros.kcal)} kcal, ${Math.round(o.macros.p)} g protein per portion</span></span>${I.next}</button></li>`).join('')}</ul>
+      ${fromHave}
+      <h3 class="h3 swap-all">All ${(SLOTS.find((s) => s.id === e.slot)?.name || 'meal').toLowerCase()} options</h3>
+      <ul class="list">${opts.map((o) => `<li><button class="row row-button" data-act="meal-swap" data-to="${o.meal.id}"><span class="row-main">${esc(o.meal.name)}<span class="fine"> ${meta(o.macros)}</span></span>${I.next}</button></li>`).join('')}</ul>
       ${opts.length ? '' : '<p class="empty">Nothing else fits this slot with your rules.</p>'}`;
   }
   const mm = mealMacros(m);
   const x = day.x;
   const lines = mealLines(m, x);
   const pantry = pantryLine(m);
-  return `<p class="muted">${SLOTS.find((s) => s.id === e.slot).name}${m.mins ? `, about ${m.mins} min` : ''}${x !== 1 ? `, ${x} portions` : ''}</p>
+  return `<p class="muted">${SLOTS.find((s) => s.id === e.slot).name}${m.gen ? ', made from your foods' : ''}${m.mins ? `, about ${m.mins} min` : ''}${x !== 1 ? `, ${x} portions` : ''}</p>
     <p class="macros"><span><strong>${Math.round(mm.kcal * x)}</strong> kcal</span><span><strong>${Math.round(mm.p * x)} g</strong> protein</span><span><strong>${Math.round(mm.c * x)} g</strong> carbs</span><span><strong>${Math.round(mm.f * x)} g</strong> fat</span></p>
     ${needsHalalNote(m, S.profile.diet) ? `<p class="note">Use halal meat.</p>` : ''}
     ${lines.length ? `<h3 class="h3">You need</h3><ul class="ingredients">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : '<p class="muted">Your own meal. Portion size scales with your calories.</p>'}
@@ -1138,15 +1548,23 @@ function mealSheet(sh) {
 
 function swapSheet(sh) {
   const cur = exerciseById(sh.ex);
-  const opts = optionsFor(cur.m, S.profile).filter((e) => e.id !== cur.id);
-  return `<p class="muted">Pick another ${muscleName(cur.m).toLowerCase()} exercise. It replaces ${esc(lcFirst(cur.name))} everywhere in your plan.</p>
-    <ul class="list">${opts.map((e) => `<li><button class="row row-button" data-act="swap-to" data-from="${cur.id}" data-to="${e.id}"><span class="row-main">${esc(e.name)}<span class="fine"> ${repText(e)}${e.load === 'bw' ? ', bodyweight' : ''}</span></span>${I.next}</button></li>`).join('')}</ul>
+  if (!cur) return '<p>That exercise isn’t in your plan any more.</p>';
+  const r = rules();
+  const opts = swapChoices(cur.m, S.profile).filter((e) => e.id !== cur.id);
+  // easier on a sore joint first, then the rest
+  const sorted = [...opts.filter((e) => !soreFor(e.id).length), ...opts.filter((e) => soreFor(e.id).length)];
+  return `<p class="muted">Pick another ${muscleName(cur.m).toLowerCase()} exercise. It replaces ${esc(lcFirst(cur.name))} everywhere in your plan. Tap a picture to see how it’s done.</p>
+    <ul class="list">${sorted.map((e) => {
+      const sore = soreFor(e.id);
+      return `<li class="row swap-row"><button class="thumb-btn" data-act="guide" data-ex="${e.id}" data-back="swap" aria-label="How to do ${esc(e.name)}">${thumb(e.id)}</button><button class="row-pick" data-act="swap-to" data-from="${cur.id}" data-to="${e.id}"><span class="row-main"><span class="row-title">${esc(e.name)}</span><span class="fine">${repText(e, repRange(e, r))}${e.load === 'bw' ? ', bodyweight' : ''}${sore.length ? `, can load your ${esc(andList(sore))}` : ''}</span></span>${I.next}</button></li>`;
+    }).join('')}</ul>
     ${opts.length ? '' : '<p class="empty">No other exercise for this muscle fits your equipment.</p>'}`;
 }
 
 function infoSheet(topic) {
   const n = S.nutrition;
   const p = S.profile;
+  const r = rules();
   if (topic === 'calories') {
     const changed = n.kcal - (n.maintenance + n.adj);
     const gainPerMonth = p.goal === 'build' ? (C.currentWeight(S.weights, today()) * C.MONTHLY_GAIN_PCT[p.experience]) / 100 : 0;
@@ -1156,8 +1574,8 @@ function infoSheet(topic) {
         <li><strong>Maintenance estimate: ${kcal(n.maintenance)}.</strong> From your weight, height, age, daily activity and ${p.days} training days.</li>
         <li><strong>${C.GOALS[p.goal].name}: ${n.adj >= 0 ? '+' : '−'}${Math.abs(n.adj)} kcal.</strong> ${p.goal === 'build' ? `Aims for about ${fKgPlain(gainPerMonth, 1)} a month, slow enough that most of it is muscle.` : p.goal === 'lean' ? 'Aims to lose about 0.5% of your weight a week.' : 'Recomp keeps you at maintenance.'}</li>
         ${changed ? `<li><strong>Check-ins: ${changed > 0 ? '+' : '−'}${Math.abs(changed)} kcal.</strong> Adjusted from how your weight actually moved.</li>` : '<li><strong>Check-ins:</strong> every two weeks your weight trend is compared with the target pace, and calories move if you’re off.</li>'}
-        <li><strong>Protein ${n.protein} g.</strong> About ${p.goal === 'lean' ? '2.0' : '1.8'} g per kg of body weight.</li>
-        <li><strong>Fat ${n.fat} g, carbs ${n.carbs} g.</strong> At least a quarter of calories from fat, carbs fill the rest for training.</li>
+        <li><strong>Protein ${n.protein} g.</strong> ${r.standardProtein ? 'A standard 0.8 g per kg of body weight, because of your kidney condition. If your kidney team gives you a different target, follow theirs.' : `About ${p.goal === 'lean' ? '2.0' : '1.8'} g per kg of body weight.`}</li>
+        <li><strong>Fat ${n.fat} g, carbs ${n.carbs} g.</strong> ${r.carbCap ? 'Carbs are capped at about 45% of calories because of your diabetes. Protein and fat make up the rest, and every meal shows its carbs so you can count them.' : 'At least a quarter of calories from fat, carbs fill the rest for training.'}</li>
       </ul><a class="link" href="#changes">See every change</a>`,
     };
   }
@@ -1320,7 +1738,7 @@ const ACTIONS = {
     commit('New meal ideas for this week');
   },
   'hidden-meals'() {
-    const { hidden } = filterMeals(S.profile.diet, S.customMeals);
+    const { hidden } = allowedMeals(S);
     openSheet({ type: 'html', title: 'Left out by your rules', html: `<ul class="list">${hidden.map((h) => `<li class="row"><span class="row-main">${esc(h.meal.name)}<span class="fine"> ${esc(h.reasons.join(', '))}</span></span></li>`).join('')}</ul><a class="link" href="#rules">Edit rules</a>` });
   },
   'copy-shop'() { copyText(shopText(), 'Shopping list copied'); },
@@ -1355,7 +1773,115 @@ const ACTIONS = {
     location.hash = '#today';
     toast('Check-in done');
   },
+
+  // ----- Exercise guides and the exercises you already do -----
+  guide(el) {
+    const ex = exerciseById(el.dataset.ex);
+    if (!ex) return;
+    const back = el.dataset.back && ui.sheet ? { ...ui.sheet } : null;
+    openSheet({ type: 'guide', title: esc(ex.name), ex: ex.id, back });
+  },
+  'sheet-back'() {
+    if (!ui.sheet?.back) { closeSheet(); return; }
+    ui.sheet = ui.sheet.back;
+    renderSheet();
+  },
+  'anim-toggle'(el) {
+    const a = ui.anim;
+    if (!a) return;
+    if (a.playing) a.pause(); else a.play();
+    el.textContent = a.playing ? 'Pause' : 'Play';
+  },
+  'mine-toggle'(el) {
+    const id = el.dataset.id;
+    const had = S.myExercises.includes(id);
+    S.myExercises = had ? S.myExercises.filter((x) => x !== id) : [...S.myExercises, id];
+    if (!had && S.swaps[id]) delete S.swaps[id];
+    refreshProgram(S);
+    save();
+    render();
+    const rep = (S.program.mine || []).find((x) => x.id === id);
+    toast(had ? 'Removed from your exercises. Sessions updated.' : rep?.where.length ? `Added. It’s in ${andList(rep.where)}.` : `Added. ${rep?.why || ''}`.trim());
+  },
+  'ex-add'(el) {
+    const { ctx, id } = el.dataset;
+    const ex = exerciseById(id);
+    const { mine } = pickerData(ctx);
+    if (!ex) return;
+    if (mine.includes(id)) { toast('Already in your list'); return; }
+    mine.push(id);
+    // saying you do it overrides an earlier swap away from it
+    if (ctx === 'state' && S.swaps[id]) delete S.swaps[id];
+    afterMineChange(ctx, `Added ${lcFirst(ex.name)}`);
+  },
+  'ex-remove'(el) {
+    const { ctx, id } = el.dataset;
+    const { mine } = pickerData(ctx);
+    const i = mine.indexOf(id);
+    if (i >= 0) mine.splice(i, 1);
+    afterMineChange(ctx, `Removed ${lcFirst(exerciseById(id)?.name || 'it')}`);
+  },
+  'ex-custom'(el) {
+    openSheet({ type: 'custom-ex', title: 'Add your own exercise', name: el.dataset.name, ctx: el.dataset.ctx });
+  },
+  'health-ack'() {
+    S.healthAck = rules().checkFirst.join('|');
+    commit();
+  },
+
+  // ----- Cooking with what you have -----
+  'pantry-clear'() {
+    S.pantry.have = [];
+    save();
+    render();
+  },
+  'pantry-show'() {
+    document.getElementById('pantry-results')?.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' });
+  },
+  'pantry-use'(el) {
+    const { kind, id, slot } = el.dataset;
+    const meal = kind === 'gen' ? ui.ideas.get(id) : mealsById(S).get(id);
+    if (!meal || !S.mealWeek) { toast('That idea has gone. Tick your foods again.'); return; }
+    const when = useLabel();
+    useMeal(meal, ui.eatDay, slot, null);
+    save();
+    location.hash = '#eat';
+    toast(`${meal.name} added to ${when}’s ${slot}`);
+  },
+  'meal-swap-gen'(el) {
+    const sh = ui.sheet;
+    const meal = ui.ideas.get(el.dataset.id);
+    if (!meal || !sh) return;
+    useMeal(meal, sh.day, null, sh.i);
+    closeSheet();
+    commit(`Swapped to ${lcFirst(meal.name)}`);
+  },
 };
+
+// After the list of exercises you already do changes. In setup it's saved at the end.
+function afterMineChange(ctx, message) {
+  if (ctx === 'state') {
+    refreshProgram(S);
+    save();
+  }
+  refreshPicker(ctx);
+  if (message) toast(ctx === 'state' ? `${message}. Sessions updated.` : message);
+}
+
+// Put a meal into a day of the plan: in place of meal number `index`, or the first meal in `slot`
+function useMeal(meal, di, slot, index) {
+  if (meal.gen && !S.customMeals.some((m) => m.id === meal.id)) S.customMeals.push({ ...meal });
+  const byId = mealsById(S);
+  const day = S.mealWeek.days[di];
+  const i = index ?? day.meals.findIndex((e) => e.slot === slot);
+  if (i >= 0) {
+    S.mealWeek.days[di] = applySwap(day, i, meal.id, targetsOf(S), byId);
+    return;
+  }
+  const order = SLOTS.map((s) => s.id);
+  const meals = [...day.meals, { slot, id: meal.id }].sort((a, b) => order.indexOf(a.slot) - order.indexOf(b.slot));
+  S.mealWeek.days[di] = rescaleDay({ ...day, meals }, targetsOf(S), byId);
+}
 
 const CHANGES = {
   'units-setup'(el) {
@@ -1386,6 +1912,19 @@ const CHANGES = {
     S.shopTicks = { [wk]: { ...(S.shopTicks[wk] || {}), [el.dataset.id]: el.checked } };
     save();
   },
+  pantry(el) {
+    const have = new Set(S.pantry.have);
+    if (el.checked) have.add(el.value);
+    else have.delete(el.value);
+    S.pantry.have = [...have];
+    save();
+    updatePantry();
+  },
+  'lib-filter'(el) {
+    ui.libFilter = el.value;
+    const list = document.getElementById('lib-list');
+    if (list) list.innerHTML = libraryList(ui.libQuery, ui.libFilter);
+  },
 };
 
 const LIVE = {
@@ -1409,13 +1948,22 @@ const LIVE = {
     }
     save();
   },
+  'ex-search'(el) {
+    const res = document.getElementById('ex-results');
+    if (res) res.innerHTML = resultsHTML(el.value, el.dataset.ctx);
+  },
+  'lib-search'(el) {
+    ui.libQuery = el.value;
+    const list = document.getElementById('lib-list');
+    if (list) list.innerHTML = libraryList(ui.libQuery, ui.libFilter);
+  },
 };
 
 const FORMS = {
   setup(form) {
     const st = ui.setup;
     if (!captureSetup(form, true)) { render(); return; }
-    const steps = st.mode === 'edit' ? 4 : 5;
+    const steps = stepsFor(st.mode).length;
     if (st.step < steps - 1) {
       st.step += 1;
       render();
@@ -1531,6 +2079,39 @@ const FORMS = {
     ui.checkin.step = 2;
     render();
   },
+  'custom-ex'(form) {
+    const typed = fval(form, 'ce-name').trim().replace(/\s+/g, ' ').slice(0, 50);
+    if (!typed) { toast('Give the exercise a name'); return; }
+    const name = typed.charAt(0).toUpperCase() + typed.slice(1);
+    const m = fval(form, 'ce-m') || 'chest';
+    const load = fval(form, 'ce-load') || 'kg';
+    const ctx = form.dataset.ctx;
+    const { mine, customs } = pickerData(ctx);
+    // Exercises you add get a standard rep range for how you track them, and fit any equipment
+    const ex = {
+      id: uid('u'), name, m, k: ['biceps', 'triceps', 'calves', 'abs', 'forearms'].includes(m) ? 'i' : 'c', load,
+      rr: load === 's' ? [20, 60] : load === 'bw' ? [8, 15] : [8, 12], step: 2.5, eq: ['gym', 'home', 'bw'], custom: true,
+    };
+    customs.push(ex);
+    mine.push(ex.id);
+    syncCustoms();
+    closeSheet();
+    if (ctx === 'state') { refreshProgram(S); save(); }
+    const q = document.getElementById('ex-q');
+    if (q) q.value = '';
+    refreshPicker(ctx);
+    toast(ctx === 'state' ? `Added ${name}. Sessions updated.` : `Added ${name}`);
+  },
+  health(form) {
+    const t = today();
+    const before = { ...S.profile, health: normHealth(S.profile.health) };
+    S.profile = { ...S.profile, health: readHealth(form) };
+    const items = afterProfileChange(S, before, t);
+    save();
+    render();
+    window.scrollTo(0, 0);
+    toast(items.length ? 'Saved. Your plan has been updated.' : 'Saved');
+  },
 };
 
 // ---------- Wiring ----------
@@ -1592,8 +2173,16 @@ function wire() {
   });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && ui.sheet) closeSheet();
+    // Enter in a search box searches; it shouldn't submit the setup form around it
+    if (e.key === 'Enter' && e.target.matches?.('input[type="search"]')) {
+      e.preventDefault();
+      e.target.blur();
+    }
   });
-  window.addEventListener('hashchange', render);
+  window.addEventListener('hashchange', () => {
+    ui.sheet = null; // a link inside a sheet goes to a new screen, so the sheet closes
+    render();
+  });
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     ui.installEvent = e;

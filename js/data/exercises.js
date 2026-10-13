@@ -2,6 +2,7 @@
 // m: main muscle | k: 'c' compound or 'i' isolation | eq: where you can do it (gym, home = dumbbells + bench, bw = bodyweight)
 // bar: needs a pull-up bar outside the gym | load: 'kg' weight, 'bw' bodyweight reps, 's' seconds
 // rr: rep range (seconds for load 's') | step: usual weight jump in kg | heavy: long rest | next: harder bodyweight version
+// auto: false means the planner only uses it when you say you already do it (it stays in the library and search)
 
 export const MUSCLES = [
   { id: 'chest', name: 'Chest' },
@@ -115,6 +116,24 @@ export const EXERCISES = [
   { id: 'farmer-hold', name: "Farmer's hold", m: 'forearms', k: 'i', eq: ['gym', 'home'], load: 's', rr: [30, 60], cue: 'Hold heavy dumbbells at your sides and stand tall.' },
   { id: 'dead-hang', name: 'Dead hang', m: 'forearms', k: 'i', eq: ['gym', 'home', 'bw'], bar: true, load: 's', rr: [20, 60], cue: 'Hang from the bar with straight arms and a strong grip.' },
   { id: 'towel-wring', name: 'Towel wring', m: 'forearms', k: 'i', eq: ['bw'], load: 's', rr: [20, 40], cue: 'Roll up a towel and wring it as hard as you can, then switch direction.' },
+
+  // Common gym exercises the planner doesn't pick on its own, kept so your plan can include the ones you already do
+  { id: 'incline-bench', name: 'Incline barbell bench press', m: 'chest', k: 'c', eq: ['gym'], load: 'kg', rr: [6, 10], step: 2.5, heavy: true, auto: false, cue: 'Bench at about 30 degrees. Lower the bar to your upper chest.' },
+  { id: 'pec-deck', name: 'Pec deck', m: 'chest', k: 'i', eq: ['gym'], load: 'kg', rr: [10, 15], step: 2.5, auto: false, cue: 'Squeeze the pads together and open slowly until you feel a stretch.' },
+  { id: 'shrug', name: 'Dumbbell shrug', m: 'back', k: 'i', eq: ['gym', 'home'], load: 'kg', rr: [10, 15], step: 2, auto: false, cue: 'Lift your shoulders straight up toward your ears and pause.' },
+  { id: 'face-pull', name: 'Face pull', m: 'shoulders', k: 'i', eq: ['gym'], load: 'kg', rr: [12, 20], step: 2.5, auto: false, cue: 'Pull the rope toward your face with your elbows high and wide.' },
+  { id: 'preacher-curl', name: 'Preacher curl', m: 'biceps', k: 'i', eq: ['gym'], load: 'kg', rr: [8, 12], step: 2.5, auto: false, cue: 'Upper arms flat on the pad. Curl up, then lower until your arms are almost straight.' },
+  { id: 'db-kickback', name: 'Dumbbell kickback', m: 'triceps', k: 'i', eq: ['gym', 'home'], load: 'kg', rr: [12, 15], step: 1, auto: false, cue: 'Keep your upper arm still and parallel to the floor as you straighten your arm.' },
+  { id: 'deadlift', name: 'Deadlift', m: 'hamstrings', k: 'c', eq: ['gym'], load: 'kg', rr: [5, 8], step: 5, heavy: true, auto: false, cue: 'Bar over the middle of your feet, back flat, push the floor away.' },
+  { id: 'kb-swing', name: 'Kettlebell swing', m: 'glutes', k: 'c', eq: ['gym', 'home'], load: 'kg', rr: [12, 20], step: 4, auto: false, cue: 'Snap your hips forward. Your arms only guide the bell.' },
+  { id: 'hip-abduction', name: 'Hip abduction machine', m: 'glutes', k: 'i', eq: ['gym'], load: 'kg', rr: [12, 20], step: 2.5, auto: false, cue: 'Push your knees apart and control the way back.' },
+  { id: 'crunch', name: 'Crunch', m: 'abs', k: 'i', eq: ['gym', 'home', 'bw'], load: 'bw', rr: [12, 20], auto: false, cue: 'Curl your ribs toward your hips rather than pulling on your neck.' },
+  { id: 'leg-raise', name: 'Lying leg raise', m: 'abs', k: 'i', eq: ['gym', 'home', 'bw'], load: 'bw', rr: [8, 15], auto: false, cue: 'Keep your lower back pressed into the floor the whole time.' },
 ];
 
-export const exerciseById = (id) => EXERCISES.find((e) => e.id === id);
+// Exercises you add yourself live in your saved data; the app registers them here so every lookup finds them
+let CUSTOM = [];
+export const setCustomExercises = (list) => { CUSTOM = Array.isArray(list) ? list : []; };
+export const customExercises = () => CUSTOM;
+export const allExercises = () => [...EXERCISES, ...CUSTOM];
+export const exerciseById = (id) => EXERCISES.find((e) => e.id === id) || CUSTOM.find((e) => e.id === id);

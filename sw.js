@@ -1,7 +1,7 @@
 // Gainloop service worker.
 // Network first: when you're online you always get the latest files you deployed,
 // and a copy is kept so the app still opens offline.
-const CACHE = 'gainloop-v1';
+const CACHE = 'gainloop-v2';
 
 const SHELL = [
   './',
@@ -18,8 +18,14 @@ const SHELL = [
   './js/store.js',
   './js/charts.js',
   './js/download.js',
+  './js/anim.js',
+  './js/health.js',
+  './js/search.js',
+  './js/pantry.js',
   './js/data/exercises.js',
   './js/data/foods.js',
+  './js/data/guides.js',
+  './js/data/poses.js',
   './fonts/barlow-latin-400-normal.woff2',
   './fonts/barlow-latin-500-normal.woff2',
   './fonts/barlow-latin-600-normal.woff2',

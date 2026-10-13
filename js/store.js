@@ -1,7 +1,8 @@
 // State and saving. Everything lives in this browser's storage; backups are plain JSON.
 import { addDays, isoDate, uid } from './util.js';
+import { blankHealth, normHealth } from './health.js';
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.1.0';
 const KEY = 'gainloop.v1';
 
 export const blankState = () => ({
@@ -25,6 +26,10 @@ export const blankState = () => ({
   drafts: {},
   mealWeek: null,
   customMeals: [],
+  myExercises: [],
+  customExercises: [],
+  pantry: { have: [] },
+  healthAck: '',
   changes: [],
   checkins: [],
   shopTicks: {},
@@ -60,8 +65,10 @@ export function migrate(s) {
   const base = blankState();
   const out = { ...base, ...s };
   out.units = { ...base.units, ...(s.units || {}) };
-  for (const k of ['weights', 'measures', 'pins', 'sessionsDone', 'customMeals', 'changes', 'checkins']) if (!Array.isArray(out[k])) out[k] = [];
+  for (const k of ['weights', 'measures', 'pins', 'sessionsDone', 'customMeals', 'changes', 'checkins', 'myExercises', 'customExercises']) if (!Array.isArray(out[k])) out[k] = [];
   for (const k of ['swaps', 'exLog', 'drafts', 'shopTicks']) if (!out[k] || typeof out[k] !== 'object') out[k] = {};
+  if (!out.pantry || !Array.isArray(out.pantry.have)) out.pantry = { have: [] };
+  if (out.profile) out.profile = { ...out.profile, health: normHealth(out.profile.health) };
   return out;
 }
 
@@ -130,7 +137,10 @@ export function demoState(today = isoDate()) {
     pullupBar: false,
     activity: 'medium',
     diet: { style: 'any', halal: true, avoid: ['nuts'], dislikes: 'mushrooms' },
+    health: blankHealth(),
   };
+  s.myExercises = ['bench', 'lat-pulldown', 'squat'];
+  s.pantry = { have: ['chicken', 'eggs', 'rice', 'oats', 'milk', 'banana', 'broccoli', 'peppers', 'greek-yog', 'bread'] };
   s.frame = { wrist: 17.2, ankle: 22.5, d: start };
 
   s.measures = [
