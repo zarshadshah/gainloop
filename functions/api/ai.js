@@ -286,10 +286,34 @@ export async function onRequestPost({ request, env }) {
   }
 }
 
+// Setup check jobs: kept in this server's memory only while it stays warm
+const JOBS = globalThis.__glJobs || (globalThis.__glJobs = new Map());
+
 // A quick health check. ?check=gl-quick runs one small real request and reports each attempt (for setting up).
-export async function onRequestGet({ env, request }) {
+export async function onRequestGet({ env, request, waitUntil }) {
   const base = { ok: true, ai: !!env.AI, model: MODELS.main };
-  const check = new URL(request.url).searchParams.get('check');
+  const url = new URL(request.url);
+  const check = url.searchParams.get('check');
+  if (check === 'gl-job' && env.AI) {
+    const id = clean(url.searchParams.get('id'), 20);
+    if (url.searchParams.get('start') === '1' && !JOBS.has(id)) {
+      const job = { started: Date.now(), status: 'running', report: [] };
+      JOBS.set(id, job);
+      const count = num(url.searchParams.get('count'), 1, 4) || 3;
+      const p = mealsPrompt({ foods: 'beef mince, potatoes, baked beans, mature cheddar, hummus, bananas, honey', slot: url.searchParams.get('slot') || 'any', count, targets: { breakfast: { kcal: 650, p: 35 }, lunch: { kcal: 750, p: 40 }, dinner: { kcal: 750, p: 40 }, snack: { kcal: 300, p: 15 } }, rules: { halal: true, avoid: ['nuts'], dislikes: 'mushrooms' } });
+      waitUntil((async () => {
+        try {
+          const r = await ask(env, p, SCHEMAS.meals, job.report);
+          Object.assign(job, { status: 'done', used: r.model, data: r.data });
+        } catch (err) {
+          Object.assign(job, { status: 'error', error: clean(err?.message || err, 200) });
+        }
+        job.ms = Date.now() - job.started;
+      })());
+      return json({ id, status: 'started' });
+    }
+    return json({ id, ...(JOBS.get(id) || { status: 'unknown' }) });
+  }
   if (!env.AI || !['gl-quick', 'gl-meal'].includes(check)) return json(base);
   const started = Date.now();
   const report = [];
