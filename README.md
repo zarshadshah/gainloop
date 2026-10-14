@@ -37,7 +37,18 @@ Most rows answer a gap found in recent reviews of Strongr Fastr, MeThreeSixty, Z
 
 ## Put it online (free)
 
-This repository is connected to Netlify: every push to `main` goes live at [gainloop-app.netlify.app](https://gainloop-app.netlify.app) in a minute or two. The steps below are for setting it up somewhere else.
+Gainloop is hosted on Cloudflare Pages: every push to `main` goes live at [gainloop.pages.dev](https://gainloop.pages.dev) in a minute or two, and every other branch gets its own preview link. The free plan doesn't limit visitors and allows 500 deploys a month.
+
+The repository is also still connected to Netlify at [gainloop-app.netlify.app](https://gainloop-app.netlify.app). Netlify's free plan allows about 20 deploys a month, and when its credits run out the site goes offline until they reset.
+
+### Cloudflare Pages (what Gainloop uses)
+
+1. Create a free account at [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up).
+2. Go to **Workers & Pages → Create application → Pages → Connect to Git**. Sign in with GitHub and give Cloudflare access to only this repository.
+3. Pick the repository and press **Begin setup**. Set the production branch to `main` and the framework preset to **None**. Leave the build command and build output directory empty, because the site is the repository root.
+4. Press **Save and Deploy**. From then on every push to `main` goes live.
+
+Cloudflare reads `_headers` for the cache rules and serves `404.html` for addresses that aren't part of the app. It also redirects `/index.html` to `/`, which `sw.js` allows for.
 
 ### Quickest: Netlify Drop
 
@@ -57,7 +68,7 @@ To update it later, drag the changed folder onto the drop zone on your project's
 
 ### Alternative: GitHub Pages
 
-In the repository's **Settings → Pages**, choose **Deploy from a branch**, pick `main` and the root folder. All paths are relative, so it works under `username.github.io/repo-name/`. On a free GitHub plan the repository has to be public. GitHub Pages ignores `_headers`, which is fine.
+In the repository's **Settings → Pages**, choose **Deploy from a branch**, pick `main` and the root folder. The app's paths are relative, so it works under `username.github.io/repo-name/`. Only the not-found page assumes the site sits at the root of its address. On a free GitHub plan the repository has to be public. GitHub Pages ignores `_headers`, which is fine.
 
 ---
 
@@ -75,6 +86,7 @@ On iPhone the home-screen app keeps its own data, separate from Safari. Set up i
 - Everything is saved in the browser on that device (`localStorage`), including any health details. Nothing is sent anywhere, and the meal ideas and exercise search run on the phone.
 - Clearing the site's data, or uninstalling the app, deletes it. Use **You → Download backup** (or **Copy backup**) now and then, and before you change phone.
 - Restore from **You → Restore** or from the welcome screen.
+- Saved data belongs to the web address it was saved on. When the app moves to a new address (for example from gainloop-app.netlify.app to gainloop.pages.dev), open the old address and use **You → Download backup** or **Copy backup**. Then use **Restore** on the new address and add the new address to your home screen.
 - Data doesn't sync between devices yet. That's the next phase.
 
 ---
@@ -118,7 +130,8 @@ In Codespaces, open the forwarded port 8080. Edit a file, save, refresh.
 | `js/data/foods.js` | Ingredients (per 100 g) and meals. |
 | `sw.js` | Offline support. |
 | `manifest.webmanifest`, `icons/` | Home-screen name, colours and icons. |
-| `_headers` | Netlify cache rules for the service worker and manifest. |
+| `_headers` | Cache rules for the service worker and manifest. Cloudflare Pages and Netlify both read it. |
+| `404.html` | The page shown for addresses that aren't part of the app. |
 | `fonts/` | Barlow and Barlow Condensed, self-hosted (SIL Open Font License). |
 
 ### Common changes
@@ -132,7 +145,7 @@ In Codespaces, open the forwarded port 8080. Edit a file, save, refresh.
 
 ### When you add a file
 
-Add its path to `SHELL` in `sw.js` so it works offline. When you ship a big change, bump `CACHE` (for example from `gainloop-v2` to `gainloop-v3`) so old copies are cleared. Online users always get the newest files anyway, because the service worker checks the network first.
+Add its path to `SHELL` in `sw.js` so it works offline. When you ship a big change, bump `CACHE` (for example from `gainloop-v4` to `gainloop-v5`) so old copies are cleared. Online users always get the newest files anyway, because the service worker checks the network first.
 
 ---
 
@@ -170,6 +183,11 @@ Gainloop gives general fitness guidance, not medical advice. Anyone with a healt
 - [American Heart Association: resistance training with and without heart disease (2023)](https://professional.heart.org/en/science-news/resistance-exercise-training-in-individuals-with-and-without-cardiovascular-disease-2023-update)
 - [KDIGO 2024 guideline for chronic kidney disease](https://kdigo.org/guidelines/ckd-evaluation-and-management/)
 - Exercise data by [RepDB](https://repdb.co): the exercise illustrations come from RepDB's free tier, which allows use inside apps as long as this credit stays visible (it's also on the You screen). The pictures can't be republished as a dataset.
+- [Cloudflare Pages: deploy from GitHub](https://developers.cloudflare.com/pages/get-started/git-integration/)
+- [Cloudflare Pages: the _headers file](https://developers.cloudflare.com/pages/configuration/headers/)
+- [Cloudflare Pages: how pages, redirects and 404s are served](https://developers.cloudflare.com/pages/platform/serving-pages/)
+- [Cloudflare Pages limits](https://developers.cloudflare.com/pages/platform/limits/)
+- [Netlify: how credits work](https://docs.netlify.com/manage/accounts-and-billing/billing/billing-for-credit-based-plans/how-credits-work/)
 - [Netlify Drop quickstart](https://docs.netlify.com/start/quickstarts/netlify-drop-quickstart/)
 - [Netlify project visibility](https://docs.netlify.com/manage/security/secure-access-to-sites/project-visibility/)
 - [Netlify: change a project name](https://docs.netlify.com/manage/projects/customize-project-name-and-cover-image/)
