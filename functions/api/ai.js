@@ -68,9 +68,11 @@ function mealsPrompt(d) {
 Hard rules:
 1. Use ONLY the foods the person lists, plus these basics that everyone has: water, cooking oil, salt, black pepper, dried herbs, spices, garlic, lemon juice, vinegar, a vegetable stock cube. Never add any other ingredient. If a good meal needs something else, skip that meal. If you break this rule anyway, name the extra food in "notInList".
 2. Follow every food rule below exactly.
-3. Size each meal to its target by choosing gram amounts. Hit the protein target where the foods allow.
-4. Weigh ingredients as bought: raw meat and fish, dry rice and pasta, raw potatoes. Give kcal, protein, carbs and fat for the amount used, from typical UK food labels.
-5. Steps: 2 to 5 short steps in UK English, metric units, oven in °C.
+3. Make one proper dish, with sides if you like, that people would really cook. Use every ingredient in the steps. Don't add foods just to hit the numbers; you needn't use everything listed.
+4. Size each meal to its target by choosing gram amounts. Hit the protein target where the foods allow.
+5. Grams are the weight as bought: raw meat and fish, DRY rice, pasta, noodles, oats and lentils, raw potatoes. Give kcal, protein, carbs and fat for that weight, from typical UK food labels. For scale, per 100 g as bought: dry rice 355 kcal, dry pasta 350, oats 375, dried red lentils 330, raw chicken breast 110, raw chicken thigh fillets 140, eggs 140 (one egg is about 50 g), oil 900. A usual portion of dry rice or pasta is 60 to 100 g.
+6. List only what you weigh. Leave water, salt and pepper out of the list and mention them in the steps.
+7. Steps: 2 to 5 short steps in UK English, metric units, oven in °C.
 Answer with JSON only, no other text, in exactly this shape:
 ${MEAL_SHAPE}`;
   const style = clean(d.style, 100);
@@ -90,22 +92,35 @@ Answer with JSON only, no other text, in exactly this shape:
   return { system, user: `What I ate: ${clean(d.text, 400)}`, maxTokens: 1500 };
 }
 
+// '1309 kcal more than planned': a bare signed number reads as what was eaten, so the direction is spelt out
+const vsPlan = (k) => `${Math.abs(Math.round(k))} kcal ${k < 0 ? 'less' : 'more'} than planned`;
+
 function coachPrompt(d) {
   const goal = { build: 'building muscle', lean: 'losing fat while keeping muscle', recomp: 'recomposition at a steady weight' }[d.goal] || 'building muscle';
   const gap = d.gap || {};
   const plan = d.plan || {};
-  const days = (Array.isArray(gap.days) ? gap.days : []).slice(0, 7).map((x) => `- ${clean(x.label, 30)}: ${Math.round(num(x.kcal, -9000, 9000) || 0)} kcal vs plan${x.foods ? ` (${clean(x.foods, 160)})` : ''}`).join('\n');
+  const total = Math.round(num(gap.kcal, -20000, 20000) || 0);
+  const ateMore = total >= 0;
+  const days = (Array.isArray(gap.days) ? gap.days : []).slice(0, 7).map((x) => `- ${clean(x.label, 30)}: ${vsPlan(num(x.kcal, -9000, 9000) || 0)}${x.foods ? ` (${clean(x.foods, 160)})` : ''}`).join('\n');
   const cardio = (Array.isArray(plan.cardio) ? plan.cardio : []).slice(0, 4).map((c) => `${num(c.count, 1, 7)} x ${num(c.min, 5, 90)} min ${clean(c.name, 40)}`).join(', ');
+  const kcal = Math.round(num(plan.kcal, 800, 6000) || 0);
+  const perDay = Math.round(num(plan.perDay, -2000, 2000) || 0);
+  const change = perDay
+    ? `eat ${Math.abs(perDay)} kcal a day ${perDay < 0 ? 'less' : 'more'} than usual: ${kcal} kcal a day instead of ${kcal - perDay}`
+    : `eat as usual, ${kcal} kcal a day`;
+  const direction = ateMore
+    ? 'They ate more than planned, so the plan is to eat a little less for a few days. Tips are easy ways to trim a little within the plan. Never suggest eating more or adding food.'
+    : 'They ate less than planned, so the plan is to eat a little more for a few days. Tips are easy ways to add a little food within the plan. Never suggest eating less.';
   const system = `You are a calm, encouraging coach inside Gainloop, a UK fitness app. Someone's eating went off their plan and the app has already worked out a safe plan to get back on track. Explain it and give practical tips.
-Rules: no guilt or shame. Never call food good, bad, junk, a cheat or empty calories. Never suggest skipping meals, fasting, purging, or extra exercise beyond the plan. Don't change any of the numbers. If being off plan happens often, suggest a more flexible plan rather than stricter rules. UK English.
+${direction}
+Rules: no guilt or shame. Never call food good, bad, junk, a cheat or empty calories. Never suggest skipping meals, fasting, purging, or extra exercise beyond the plan. Don't change any of the numbers or add new ones. If being off plan happens often, suggest a more flexible plan rather than stricter rules. UK English.
 Answer with JSON only, no other text, in exactly this shape:
 {"message":"2 to 3 sentences, under 70 words","tips":["under 20 words","under 20 words","under 20 words"]}`;
   const user = `Goal: ${goal}.
-Off plan:
+What happened: in total they ate ${vsPlan(total)}.
 ${days || '- one day'}
-Total: ${Math.round(num(gap.kcal, -20000, 20000) || 0)} kcal vs plan.
-The app's plan: ${num(plan.days, 1, 21)} days at ${Math.round(num(plan.kcal, 800, 6000) || 0)} kcal a day (${Math.round(num(plan.perDay, -2000, 2000) || 0)} kcal a day versus normal), protein stays at ${Math.round(num(plan.protein, 0, 400) || 0)} g.${cardio ? ` Extra cardio: ${cardio}.` : ''}
-Food rules: ${rulesText(d.rules).replace(/\n/g, ' ')}`;
+The app's plan: for the next ${num(plan.days, 1, 21)} days, ${change}. Protein stays at ${Math.round(num(plan.protein, 0, 400) || 0)} g.${cardio ? ` Extra cardio: ${cardio}.` : ''}
+Food rules (mention them only if a tip needs to): ${rulesText(d.rules).replace(/\n/g, ' ')}`;
   return { system, user, maxTokens: 1200 };
 }
 

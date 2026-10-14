@@ -3,12 +3,12 @@ import { INGREDIENTS, MEALS, AVOID_OPTIONS } from './data/foods.js';
 import { clamp, lcFirst, rng, round, roundTo } from './util.js';
 
 // AI meals list their own ingredients in grams ('150 g chicken thigh fillets', '2 eggs')
+const isEggs = (food) => /\beggs?\b/i.test(food) && !/(fried rice|noodle|pasta|white|yolk)/i.test(food);
+const eggsText = (n) => `${n}\u00a0egg${n > 1 ? 's' : ''}`;
+
 export function aiLineText(l, x = 1) {
   const g = (l.g || 0) * x;
-  if (/\begg/i.test(l.food) && !/(fried rice|noodle|plant)/i.test(l.food) && g >= 40) {
-    const n = Math.max(1, Math.round(g / 50));
-    return `${n}\u00a0egg${n > 1 ? 's' : ''}`;
-  }
+  if (isEggs(l.food) && g >= 40) return eggsText(Math.max(1, Math.round(g / 50)));
   if (!g) return l.food;
   return `${roundTo(g, g < 30 ? 1 : 5)}\u00a0g ${l.food.replace(/,\s*(raw|dry|uncooked)$/i, ' ($1)')}`;
 }
@@ -287,12 +287,18 @@ export function shoppingList(week, byId) {
   const pantry = new Set();
   const custom = new Map();
   const aiFoods = new Map();
+  const aiBasics = new Set();
+  const plainName = (food) => food.replace(/,\s*(raw|dry|uncooked)$/i, '');
   for (const day of week.days) {
     for (const e of day.meals) {
       const meal = byId.get(e.id);
       if (!meal) continue;
       if (meal.ai && meal.lines) {
-        for (const l of meal.lines) if (l.g) aiFoods.set(l.food, (aiFoods.get(l.food) || 0) + l.g * day.x);
+        for (const l of meal.lines) {
+          // oil, salt, spices: checked, not bought
+          if (l.basic) aiBasics.add(plainName(l.food).replace(/^./, (c) => c.toUpperCase()));
+          else if (l.g) aiFoods.set(l.food, (aiFoods.get(l.food) || 0) + l.g * day.x);
+        }
         continue;
       }
       if (isCustom(meal)) {
@@ -319,10 +325,12 @@ export function shoppingList(week, byId) {
     groups.get(ing.shop).push({ id, name: ing.name, amount: text });
   }
   for (const list of groups.values()) list.sort((a, b) => a.name.localeCompare(b.name));
+  const pantryNames = [...pantry].map((id) => INGREDIENTS[id].name);
+  const known = new Set(pantryNames.map((n) => n.toLowerCase()));
   return {
     groups,
-    pantry: [...pantry].map((id) => INGREDIENTS[id].name).sort(),
+    pantry: [...pantryNames, ...[...aiBasics].filter((n) => !known.has(n.toLowerCase()))].sort(),
     custom: [...custom].map(([name, portions]) => ({ name, portions: round(portions, 1) })),
-    ai: [...aiFoods].map(([name, g]) => ({ name: name.replace(/,\s*(raw|dry|uncooked)$/i, ''), amount: `${Math.ceil(g / 50) * 50} g` })).sort((a, b) => a.name.localeCompare(b.name)),
+    ai: [...aiFoods].map(([name, g]) => ({ name: plainName(name), amount: isEggs(name) ? eggsText(Math.max(1, Math.ceil(g / 50 - 0.15))) : `${Math.ceil(g / 50) * 50} g` })).sort((a, b) => a.name.localeCompare(b.name)),
   };
 }
