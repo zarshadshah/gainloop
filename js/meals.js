@@ -2,6 +2,17 @@
 import { INGREDIENTS, MEALS, AVOID_OPTIONS } from './data/foods.js';
 import { clamp, lcFirst, rng, round, roundTo } from './util.js';
 
+// AI meals list their own ingredients in grams ('150 g chicken thigh fillets', '2 eggs')
+export function aiLineText(l, x = 1) {
+  const g = (l.g || 0) * x;
+  if (/\begg/i.test(l.food) && !/(fried rice|noodle|plant)/i.test(l.food) && g >= 40) {
+    const n = Math.max(1, Math.round(g / 50));
+    return `${n}\u00a0egg${n > 1 ? 's' : ''}`;
+  }
+  if (!g) return l.food;
+  return `${roundTo(g, g < 30 ? 1 : 5)}\u00a0g ${l.food.replace(/,\s*(raw|dry|uncooked)$/i, ' ($1)')}`;
+}
+
 export const FLAG_WORDS = {
   fish: ['fish'],
   dairy: ['dairy'],
@@ -60,7 +71,7 @@ export function ruleBreaks(meal, diet) {
     if (flags.has(a)) reasons.push(`contains ${(AVOID_OPTIONS.find((o) => o.id === a)?.name || a).toLowerCase()}`);
   }
   const names = isCustom(meal)
-    ? [meal.name.toLowerCase()]
+    ? [meal.name.toLowerCase(), ...(meal.lines || []).map((l) => String(l.food || '').toLowerCase())]
     : [meal.name.toLowerCase(), ...meal.items.map(([id]) => INGREDIENTS[id].name.toLowerCase()), ...(meal.pantry || []).map((id) => INGREDIENTS[id].name.toLowerCase())];
   for (const word of parseDislikes(diet.dislikes)) {
     const s = singular(word);
@@ -219,7 +230,8 @@ export function planWeek(allowed, targets, seed, start, opts = {}) {
   const days = [];
   for (let i = 0; i < 7; i += 1) {
     const prev = days[i - 1] ? new Set(days[i - 1].meals.filter((e) => e.slot !== 'snack').map((e) => e.id)) : new Set();
-    days.push(planDay(bySlot, targets, rand, counts, prev, byId, opts));
+    // a back-on-track plan can give a day its own targets
+    days.push(planDay(bySlot, opts.targetsFor ? opts.targetsFor(i) : targets, rand, counts, prev, byId, opts));
   }
   return { seed, start, days };
 }
@@ -259,6 +271,7 @@ export function amountText(ingId, grams) {
 }
 
 export function mealLines(meal, x) {
+  if (meal.ai && meal.lines) return meal.lines.map((l) => aiLineText(l, x));
   if (isCustom(meal)) return [];
   return [
     ...meal.items.map(([id, g]) => amountText(id, g * x)),
@@ -273,10 +286,15 @@ export function shoppingList(week, byId) {
   const totals = new Map();
   const pantry = new Set();
   const custom = new Map();
+  const aiFoods = new Map();
   for (const day of week.days) {
     for (const e of day.meals) {
       const meal = byId.get(e.id);
       if (!meal) continue;
+      if (meal.ai && meal.lines) {
+        for (const l of meal.lines) if (l.g) aiFoods.set(l.food, (aiFoods.get(l.food) || 0) + l.g * day.x);
+        continue;
+      }
       if (isCustom(meal)) {
         custom.set(meal.name, (custom.get(meal.name) || 0) + day.x);
         continue;
@@ -305,5 +323,6 @@ export function shoppingList(week, byId) {
     groups,
     pantry: [...pantry].map((id) => INGREDIENTS[id].name).sort(),
     custom: [...custom].map(([name, portions]) => ({ name, portions: round(portions, 1) })),
+    ai: [...aiFoods].map(([name, g]) => ({ name: name.replace(/,\s*(raw|dry|uncooked)$/i, ''), amount: `${Math.ceil(g / 50) * 50} g` })).sort((a, b) => a.name.localeCompare(b.name)),
   };
 }

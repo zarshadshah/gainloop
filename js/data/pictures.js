@@ -93,6 +93,18 @@ export const PICTURES = {
   'farmer-hold': { f: 'dumbbell-farmers-walk', mode: 'still' },
   'dead-hang': { f: 'dead-hang', mode: 'still' },
   'wrist-roller': { f: 'wrist-roller' },
+  'brisk-walk': { f: 'walking', mode: 'still' },
+  'incline-walk': { f: 'incline-treadmill-walk', mode: 'still' },
+  'treadmill-run': { f: 'treadmill-running', mode: 'still' },
+  run: { f: 'running', mode: 'still' },
+  bike: { f: 'stationary-bike', mode: 'still' },
+  rower: { f: 'rowing-machine' },
+  'cross-trainer': { f: 'elliptical-trainer', mode: 'still' },
+  'stair-climber': { f: 'stair-climber', mode: 'still' },
+  skipping: { f: 'jump-rope', mode: 'still' },
+  'jumping-jacks': { f: 'jumping-jacks' },
+  burpees: { f: 'burpees', mode: 'still', note: 'This shows the middle of the move, in the push-up position.' },
+  'mountain-climbers': { f: 'mountain-climbers' },
 };
 
 export const pictureFor = (exId) => PICTURES[exId] || null;

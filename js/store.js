@@ -2,7 +2,7 @@
 import { addDays, isoDate, uid } from './util.js';
 import { blankHealth, normHealth } from './health.js';
 
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.2.0';
 const KEY = 'gainloop.v1';
 
 export const blankState = () => ({
@@ -28,7 +28,9 @@ export const blankState = () => ({
   customMeals: [],
   myExercises: [],
   customExercises: [],
-  pantry: { have: [] },
+  pantry: { have: [], text: '', ai: null },
+  foodLog: {},
+  adjust: [],
   healthAck: '',
   changes: [],
   checkins: [],
@@ -69,9 +71,10 @@ export function migrate(s) {
   const base = blankState();
   const out = { ...base, ...s };
   out.units = { ...base.units, ...(s.units || {}) };
-  for (const k of ['weights', 'measures', 'pins', 'sessionsDone', 'customMeals', 'changes', 'checkins', 'myExercises', 'customExercises']) if (!Array.isArray(out[k])) out[k] = [];
-  for (const k of ['swaps', 'exLog', 'drafts', 'shopTicks']) if (!out[k] || typeof out[k] !== 'object') out[k] = {};
+  for (const k of ['weights', 'measures', 'pins', 'sessionsDone', 'customMeals', 'changes', 'checkins', 'myExercises', 'customExercises', 'adjust']) if (!Array.isArray(out[k])) out[k] = [];
+  for (const k of ['swaps', 'exLog', 'drafts', 'shopTicks', 'foodLog']) if (!out[k] || typeof out[k] !== 'object' || Array.isArray(out[k])) out[k] = {};
   if (!out.pantry || !Array.isArray(out.pantry.have)) out.pantry = { have: [] };
+  out.pantry = { have: out.pantry.have, text: typeof out.pantry.text === 'string' ? out.pantry.text.slice(0, 600) : '', ai: out.pantry.ai && typeof out.pantry.ai === 'object' ? out.pantry.ai : null };
   out.myExercises = [...new Set(out.myExercises.map(renameEx))];
   out.swaps = Object.fromEntries(Object.entries(out.swaps).map(([k, v]) => [renameEx(k), renameEx(v)]));
   if (out.profile) out.profile = { ...out.profile, health: normHealth(out.profile.health) };

@@ -579,3 +579,91 @@ input[type="search"]:focus-visible { outline: 3px solid var(--ink); outline-offs
 .pantry-bar.away { visibility: hidden; }
 details.session-notes > summary { font-weight: 600; cursor: pointer; }
 details.session-notes[open] > summary { margin-bottom: 8px; }
+
+/* ---------- Meal ideas from the AI ---------- */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.ai-box { margin: 4px 0 28px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); }
+.ai-box > .h2 { display: flex; align-items: center; gap: 8px; }
+.ai-box > .h2 .i { color: var(--tape-deep); }
+.ai-box textarea { width: 100%; min-height: 84px; resize: vertical; }
+.ai-box .field { margin-bottom: 14px; }
+.ai-box > .fine { margin: 12px 0 0; }
+#ai-results:not(:empty) { margin-top: 16px; }
+.ai-wait { display: flex; align-items: flex-start; gap: 12px; margin: 0 0 12px; color: var(--ink-2); }
+.ai-wait p { margin: 0; }
+.ai-wait .i { flex: 0 0 auto; color: var(--tape-deep); }
+.ai-dots { position: relative; flex: 0 0 auto; width: 34px; height: 22px; margin-top: 2px; }
+.ai-dots { background: radial-gradient(circle, var(--tape-deep) 4px, transparent 4.5px) 0 50% / 11px 22px repeat-x; }
+.ai-dots { animation: ai-pulse 1.2s ease-in-out infinite; }
+@keyframes ai-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ai-dots { animation: none; } }
+.ai-foot { margin-top: 12px; }
+.ai-foot .btn-link { padding: 0; font-size: 14px; }
+.warn-note { background: var(--warn-bg); color: var(--ink); }
+.pick-head { margin-top: 8px; }
+.short-list { margin-top: 22px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.short-list > summary { position: relative; display: grid; gap: 2px; padding: 12px 32px 12px 0; list-style: none; cursor: pointer; }
+.short-list > summary::-webkit-details-marker { display: none; }
+.short-list > summary::after { content: ''; position: absolute; right: 8px; top: 50%; width: 9px; height: 9px; border-right: 2px solid var(--ink-3); border-bottom: 2px solid var(--ink-3); transform: translateY(-70%) rotate(45deg); }
+.short-list[open] > summary::after { transform: translateY(-20%) rotate(225deg); }
+.short-list[open] { padding-bottom: 12px; }
+
+/* ---------- Food log and back on track ---------- */
+.food-row.is-changed { box-shadow: inset 3px 0 0 var(--tape-deep); padding-left: 10px; }
+.add-food { margin-top: 12px; }
+.day-vs { margin: 10px 0 0; color: var(--ink-2); }
+.day-vs strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.day-vs.over strong { color: var(--warn); }
+.over-text { color: var(--warn); font-weight: 600; font-variant-numeric: tabular-nums; }
+.under-text { color: var(--ink-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+.track-card p { margin: 6px 0 12px; }
+.card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; }
+.card-tape .btn-link { color: var(--tape-ink); }
+.cardio-due { display: flex; align-items: center; gap: 12px; margin: 8px 0 12px; padding: 10px 12px; border-radius: 12px; background: var(--sunk); }
+.cardio-due-text { display: grid; gap: 2px; flex: 1 1 auto; min-width: 0; margin: 0; }
+.cardio-due .btn { flex: 0 0 auto; }
+.adj-note { margin: 6px 0 0; }
+.gap-days { margin-bottom: 14px; }
+.options { display: grid; gap: 8px; }
+.options input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.option { display: grid; gap: 2px; padding: 12px 14px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--surface); cursor: pointer; }
+.options input:checked + .option { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.options input:focus-visible + .option { outline: 3px solid var(--ink); outline-offset: 2px; }
+.check-row { display: flex; align-items: center; gap: 12px; margin: 0 0 10px; }
+.check-row input { width: 22px; height: 22px; margin: 0; flex: 0 0 auto; accent-color: var(--ink); }
+.check-row label { margin: 0; font-weight: 500; }
+.plan-box { padding-top: 6px; }
+.plan-box .list { margin-bottom: 12px; }
+.coach { margin: 14px 0; padding: 12px 14px; border-radius: 12px; background: var(--sunk); }
+.coach .h3 { margin: 0 0 6px; }
+.coach .notes { margin: 8px 0; }
+.coach > .fine { margin: 6px 0 0; }
+.coach .btn .i, .ai-box .btn .i { color: inherit; }
+.log-day { padding: 14px 0 10px; border-bottom: 1px solid var(--line); }
+.log-day .section-head { margin-bottom: 4px; }
+.log-day .list { border-top: 0; }
+.log-day .btn-link { padding: 6px 0; font-size: 15px; display: inline-flex; align-items: center; gap: 6px; }
+.macro-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 16px 0; }
+.macro-grid legend { grid-column: 1 / -1; margin-bottom: 0; }
+.macro-grid .input-unit.small { width: 100%; }
+.macro-grid .input-unit input { padding-right: 84px; }
+.est-list { list-style: none; margin: 10px 0 4px; padding: 0; display: grid; gap: 6px; }
+.est-list li { display: flex; justify-content: space-between; gap: 12px; font-size: 15px; }
+.est-list li > span:last-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.est-list .fine { display: block; }
+#lf-est:not(:empty) { margin-top: 10px; }
+
+/* ---------- Cardio ---------- */
+.add-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.chip-btn { display: inline-flex; align-items: center; gap: 4px; min-height: 40px; padding: 0 12px 0 8px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--surface); color: var(--ink); font: 500 15px/1.1 var(--font-body); cursor: pointer; }
+.chip-btn:hover { border-color: var(--ink-3); }
+.chip-btn .i { width: 1.1em; height: 1.1em; color: var(--ink-3); }
+.exercise.is-cardio .ex-title .fine { color: var(--ink-2); }
+.log-cardio { gap: 12px; }
+.log-felt { display: grid; gap: 6px; }
+.log-felt .seg { flex-wrap: wrap; }
+.effort-list { margin: 6px 0 12px; padding-left: 20px; color: var(--ink-2); font-size: 15px; }
+.effort-list li { margin: 4px 0; }
+.effort-list strong { color: var(--ink); }
+select { width: 100%; min-height: 48px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface); color: var(--ink); font: 400 17px/1.3 var(--font-body); }
+#lf-text { min-height: 72px; }

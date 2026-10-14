@@ -1,18 +1,20 @@
 // Gainloop: screens, actions and routing. The maths lives in calc.js, plan.js, meals.js and engine.js.
-import { addDays, andList, dayLong, dayShort, esc, fmtDate, fmtInt, isoDate, lcFirst, plural, relDays, round, uid, weekdayIndex } from './util.js';
+import { addDays, andList, dayLong, dayShort, daysBetween, esc, fmtDate, fmtInt, isoDate, lcFirst, plural, relDays, round, uid, weekdayIndex } from './util.js';
 import { downloadText } from './download.js';
 import { bodyInputValue, fmtBody, fmtBodyDelta, fmtHeight, fmtLen, fmtLenDelta, fmtLenNum, fmtLift, heightParts, kgToLb, lbToKg, lenFromCm, lenToCm, lenUnitLabel, liftInputValue, liftToKg, parseNum, stoneParts, CM_PER_IN } from './units.js';
 import * as C from './calc.js';
-import { MUSCLES, allExercises, customExercises, exerciseById, muscleName, setCustomExercises } from './data/exercises.js';
+import { CARDIO, EFFORTS, MUSCLES, allExercises, cardioExercises, cardioKcal, customExercises, effortIndex, exerciseById, isCardio, muscleName, setCustomExercises } from './data/exercises.js';
 import { AVOID_OPTIONS, INGREDIENTS, SLOTS } from './data/foods.js';
 import { GUIDES } from './data/guides.js';
 import { PICTURE_CREDIT, PICTURE_CREDIT_URL, frameSrcs, pictureFor, thumbSrc } from './data/pictures.js';
 import { CONDITIONS, DIABETES, PAIN, STRESS, blankHealth, hasHealth, healthSummary, normHealth, repRange } from './health.js';
 import { namesMatch, searchExercises } from './search.js';
 import { matchRecipes, mealIdeas, pickableIngredients } from './pantry.js';
-import { advice, nextSessionId, repText, restText, swapChoices, whySets } from './plan.js';
+import { CARDIO_FINISH, advice, cardioAdvice, nextSessionId, repText, restText, swapChoices, whySets } from './plan.js';
 import { applySwap, dayTotals, mealLines, mealMacros, needsHalalNote, pantryLine, rescaleDay, shoppingList, swapOptions } from './meals.js';
-import { afterBodyChange, afterProfileChange, allowedMeals, analyseCheckin, applyCheckin, dietOf, ensureCurrentWeek, mealsById, refreshMeals, refreshProgram, rulesOf, seedDemo, startState, targetsOf } from './engine.js';
+import { afterBodyChange, afterProfileChange, allowedMeals, analyseCheckin, applyCheckin, dietOf, ensureCurrentWeek, mealsById, refreshMeals, refreshProgram, rescaleMeals, rulesOf, seedDemo, startState, targetsFor, weekDate } from './engine.js';
+import { LOOKBACK, SLOT_SHARE, addLogItem, adjustmentProgress, applyCatchUp, cardioOffer, cardioToDo, catchUpOptions, dayTargets, diffOf, leaveGap, logFor, loggedMeal, markCardio, pendingGap, pruneLog, removeLogItem, stopAdjustment } from './track.js';
+import { AIError, aiMeal, aiRules, callAI, estimateTotal, slotTargets } from './ai.js';
 import { APP_VERSION, blankState, clearSaved, exportText, isStorageOK, loadState, parseBackup, saveState } from './store.js';
 import { drawWeightChart, tapeHTML } from './charts.js';
 
@@ -20,7 +22,7 @@ const PREVIEW = typeof window !== 'undefined' && !!window.GAINLOOP_PREVIEW;
 const today = () => isoDate();
 
 let S = loadState();
-const ui = { setup: null, checkin: null, eatDay: weekdayIndex(isoDate()), sheet: null, installEvent: null, lastRoute: '', copyText: '', picPaused: false, libFilter: 'all', libQuery: '', ideas: new Map() };
+const ui = { setup: null, checkin: null, eatDay: weekdayIndex(isoDate()), sheet: null, installEvent: null, lastRoute: '', copyText: '', picPaused: false, libFilter: 'all', libQuery: '', ideas: new Map(), aiSlot: 'any', aiBusy: false, aiError: '', ot: null, coachBusy: false, coachError: '', estBusy: false };
 const rules = () => rulesOf(S);
 const reduceMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 // Small picture of an exercise for lists
@@ -68,6 +70,7 @@ const I = {
   alert: svg('<path d="M12 4 2.8 19.5h18.4Z"/><path d="M12 10v4.4"/><circle cx="12" cy="17" r="1" class="fill"/>'),
   share: svg('<path d="M12 3.5v11M8 7.2l4-3.7 4 3.7"/><path d="M7 10.5H5.5v10h13v-10H17"/>'),
   copy: svg('<rect x="8" y="8" width="11.5" height="12" rx="2"/><path d="M5 15.5V5.8C5 4.8 5.8 4 6.8 4h8.4"/>'),
+  ai: svg('<path d="M11 3.5l1.8 4.9 4.9 1.8-4.9 1.8L11 16.9l-1.8-4.9-4.9-1.8 4.9-1.8Z"/><path d="M18 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8Z"/>'),
 };
 
 const mark = (size = 72) => `<svg class="mark" width="${size}" height="${size}" viewBox="0 0 120 120" aria-hidden="true">
@@ -232,7 +235,7 @@ function welcomeView() {
       <button class="btn" data-act="demo">Explore with example data</button>
       <a class="btn-link" href="#restore">Restore a backup</a>
     </div>
-    <p class="fine">Your data stays on this device. No account needed.</p>
+    <p class="fine">Your data stays on this device. No account needed. The AI helpers only send what they need, when you use them.</p>
   </section>`;
 }
 
@@ -464,8 +467,6 @@ function todayView() {
   const nextId = nextSessionId(prog, S.sessionsDone);
   const next = prog.sessions.find((s) => s.id === nextId);
   const doneToday = S.sessionsDone.filter((x) => x.d === t).map((x) => prog.sessions.find((s) => s.id === x.sid)?.name).filter(Boolean);
-  const day = S.mealWeek?.days[weekdayIndex(t)];
-  const byId = mealsById(S);
   const weighedToday = S.weights.find((w) => w.d === t);
   const trend = C.trendAt(S.weights, t);
   const rate = C.weightRate(S.weights, t);
@@ -508,16 +509,7 @@ function todayView() {
       <p class="fine">${trend ? `7-day average ${fBody(trend.kg)} from ${plural(trend.n, 'weigh-in')}${rate ? `, ${rate.kgPerWeek >= 0 ? 'up' : 'down'} ${fKgPlain(Math.abs(rate.kgPerWeek), 2)} a week` : ''}.` : 'No weigh-ins this week yet.'} First thing in the morning is most consistent.</p>
     </section>`;
 
-  const food = day
-    ? `<section class="section">
-        <div class="section-head"><h2 class="h2">Food today</h2><a class="link" href="#eat">Meal plan</a></div>
-        <p class="kpi"><span><strong>${fmtInt(S.nutrition.kcal)}</strong> kcal</span><span><strong>${S.nutrition.protein} g</strong> protein</span></p>
-        <ul class="list">${day.meals.map((e) => {
-          const m = byId.get(e.id);
-          return m ? `<li class="row"><span class="row-label">${SLOTS.find((s) => s.id === e.slot).name}</span><span class="row-main">${esc(m.name)}</span></li>` : '';
-        }).join('')}</ul>
-      </section>`
-    : '';
+  const food = foodTodayHTML(t);
 
   let focus = '';
   if (prio.length && progress) {
@@ -543,6 +535,7 @@ function todayView() {
     ${demoBanner()}${storageBanner()}
     ${healthCard}
     ${checkinCard}
+    ${trackCardHTML(t)}
     ${workout}
     ${weigh}
     ${food}
@@ -717,7 +710,7 @@ function trainView() {
   const eqName = { gym: 'gym', home: 'dumbbells at home', bw: 'bodyweight' }[p.equipment];
   const autoPri = prog.priorities.filter((x) => x.source === 'tape').map((x) => x.muscle);
   const r = rules();
-  const mine = (prog.mine || []).filter((x) => exerciseById(x.id));
+  const mine = (prog.mine || []).filter((x) => exerciseById(x.id) && !isCardio(exerciseById(x.id)));
   const trainHealth = healthFor('train');
 
   return `<header class="screen-head"><div><h1 class="title">Train</h1><p class="muted">${esc(prog.split)}, ${p.days} days a week, ${eqName}</p></div></header>
@@ -744,6 +737,7 @@ function trainView() {
           <span class="row-main"><span class="row-title">${esc(ex.name)}</span><span class="fine">${x.where.length ? `In ${esc(andList(x.where))}` : esc(x.why)}</span></span></li>`;
       }).join('')}</ul>` : '<p class="muted">Tell Gainloop what you do now and your plan keeps those exercises, building the rest around them.</p>'}
     </section>
+    ${cardioSectionHTML()}
     <section class="section">
       <ul class="list">
         <li><a class="row row-link" href="#library"><span class="row-main"><span class="row-title">Exercise library</span><span class="fine">How to do all ${libraryCount()}, with the kit you need</span></span>${I.next}</a></li>
@@ -786,6 +780,7 @@ function sessionView(sid) {
     ${s.slots.map((sl, i) => {
       const ex = exerciseById(sl.ex);
       if (!ex) return '';
+      if (sl.cardio || isCardio(ex)) return cardioSlotHTML(sid, sl, ex, i, draft[ex.id] || {});
       const hist = (S.exLog[ex.id] || []).filter((h) => h.d < t);
       const last = hist[hist.length - 1];
       const rr = repRange(ex, r);
@@ -818,6 +813,315 @@ function sessionView(sid) {
     <div class="finish-bar"><button class="btn btn-primary btn-wide" data-act="finish" data-sid="${sid}">Finish workout</button></div>`;
 }
 
+// ----- Food log and getting back on track -----
+
+const signedInt = (n) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${fmtInt(Math.abs(n))}`;
+const kcalSigned = (n) => `${signedInt(n)} kcal`;
+const slotName = (id) => SLOTS.find((s) => s.id === id)?.name || 'Meal';
+
+// Which day of this week's meal plan a date is, or -1
+function weekIndexOf(d) {
+  if (!S.mealWeek) return -1;
+  const i = daysBetween(S.mealWeek.start, d);
+  return i >= 0 && i < 7 ? i : -1;
+}
+
+// Meal number i in the plan for date d, with that day's portions
+function plannedMeal(d, i) {
+  const di = weekIndexOf(d);
+  const day = di >= 0 ? S.mealWeek.days[di] : null;
+  const e = day?.meals[i];
+  const m = e && mealsById(S).get(e.id);
+  if (!m) return null;
+  const mm = mealMacros(m);
+  return { slot: e.slot, name: m.name, kcal: Math.round(mm.kcal * day.x), p: Math.round(mm.p * day.x), c: Math.round(mm.c * day.x), f: Math.round(mm.f * day.x) };
+}
+
+// What a meal slot usually holds on a day, for days whose plan isn't known any more
+function plannedSlot(d, slot) {
+  const di = weekIndexOf(d);
+  if (di >= 0) {
+    const i = S.mealWeek.days[di].meals.findIndex((e) => e.slot === slot);
+    if (i >= 0) return { ...plannedMeal(d, i), mealIdx: i };
+  }
+  const t = dayTargets(S, d);
+  const sh = SLOT_SHARE[slot] || 0.25;
+  return { slot, name: `Your planned ${slot}`, kcal: Math.round(t.kcal * sh), p: Math.round(t.protein * sh), c: Math.round(t.carbs * sh), f: Math.round(t.fat * sh), mealIdx: null };
+}
+
+function dayWord(d, t = today()) {
+  const n = daysBetween(d, t);
+  if (n === 0) return 'today';
+  if (n === 1) return 'yesterday';
+  if (n === -1) return 'tomorrow';
+  return `on ${dayLong(weekdayIndex(d))}`;
+}
+
+function gapSentence(gap, t = today()) {
+  const k = fmtInt(Math.abs(Math.round(gap.diff.kcal)));
+  const more = gap.dir === 'over' ? 'more' : 'less';
+  if (gap.days.length === 1) return `You ate about ${k} kcal ${more} than planned ${dayWord(gap.days[0].d, t)}.`;
+  return `Over the last ${plural(daysBetween(gap.days[0].d, t) + 1, 'day')} you ate about ${k} kcal ${more} than planned.`;
+}
+
+const itemText = (it) => (it.kind === 'skip' ? `Skipped ${lcFirst(it.planned?.name || slotName(it.slot))}` : it.ate?.text || 'Something else');
+
+function foodTodayHTML(t) {
+  const di = weekIndexOf(t);
+  const day = di >= 0 ? S.mealWeek.days[di] : null;
+  if (!day) return '';
+  const byId = mealsById(S);
+  const tt = dayTargets(S, t);
+  const items = logFor(S, t)?.items || [];
+  const extras = items.filter((x) => x.kind === 'extra' || (x.kind === 'instead' && (x.mealIdx === null || x.mealIdx === undefined)));
+  const diff = diffOf(items);
+  const rows = day.meals.map((e, i) => {
+    const m = byId.get(e.id);
+    if (!m) return '';
+    const lg = loggedMeal(S, t, i);
+    const mm = mealMacros(m);
+    const status = lg ? (lg.kind === 'skip' ? 'Skipped' : `Instead: ${lg.ate?.text || 'something else'}, ${fmtInt(lg.ate?.kcal || 0)} kcal`) : `As planned, ${fmtInt(Math.round(mm.kcal * day.x))} kcal`;
+    return `<li><button class="row row-button food-row${lg ? ' is-changed' : ''}" data-act="log-meal" data-d="${t}" data-i="${i}">
+      <span class="row-label">${slotName(e.slot)}</span>
+      <span class="row-main"><span class="row-title">${esc(m.name)}</span><span class="fine">${esc(status)}</span></span>${I.next}</button></li>`;
+  }).join('');
+  const extraRows = extras.map((x) => `<li class="row food-row is-changed"><span class="row-label">${x.kind === 'extra' ? 'Extra' : 'Instead'}</span>
+      <span class="row-main"><span class="row-title">${esc(x.ate?.text || 'Something else')}</span><span class="fine">${fmtInt(x.ate?.kcal || 0)} kcal, ${fmtInt(x.ate?.p || 0)} g protein</span></span>
+      <button class="icon-btn" data-act="log-del" data-d="${t}" data-id="${x.id}" aria-label="Remove ${esc(x.ate?.text || 'this')}">${I.close}</button></li>`).join('');
+  const summary = items.length
+    ? `<p class="day-vs ${diff.kcal > 0 ? 'over' : diff.kcal < 0 ? 'under' : ''}">Today against your plan: <strong>${Math.abs(diff.kcal) < 1 ? 'on plan' : kcalSigned(Math.round(diff.kcal))}</strong>${Math.abs(diff.p) >= 5 ? `, ${signedInt(Math.round(diff.p))} g protein` : ''}</p>`
+    : '<p class="fine">Your plan counts as eaten. Tap a meal if you skipped or swapped it.</p>';
+  return `<section class="section">
+      <div class="section-head"><h2 class="h2">Food today</h2><a class="link" href="#log">Food log</a></div>
+      <p class="kpi"><span><strong>${fmtInt(tt.kcal)}</strong> kcal</span><span><strong>${tt.protein} g</strong> protein</span>${tt.delta ? `<span class="badge badge-tape">Back on track ${kcalSigned(tt.delta)}</span>` : ''}</p>
+      <ul class="list">${rows}${extraRows}</ul>
+      <button class="btn btn-small add-food" data-act="log-add" data-d="${t}">${I.plus} Something else I ate</button>
+      ${summary}
+    </section>`;
+}
+
+// The plan that's running today, or starts tomorrow
+function currentPlan(t) {
+  return (S.adjust || []).filter((a) => addDays(a.start, a.days) > t && daysBetween(t, a.start) <= 1).sort((a, b) => (a.start < b.start ? -1 : 1))[0] || null;
+}
+
+function cardioDueHTML(s) {
+  const ex = exerciseById(s.ex);
+  if (!ex) return '';
+  return `<div class="cardio-due">
+    <button class="thumb-btn" data-act="guide" data-ex="${ex.id}" aria-label="How to do ${esc(ex.name)}">${thumb(ex.id)}</button>
+    <p class="cardio-due-text"><strong>${s.min} min ${esc(lcFirst(ex.name))}</strong><span class="fine">${EFFORTS[effortIndex(s.effort)].name} pace, about ${fmtInt(s.kcal)} kcal${s.late ? `, planned for ${dayLong(weekdayIndex(s.d))}` : s.d === today() ? ', today' : `, ${dayLong(weekdayIndex(s.d))}`}</span></p>
+    <button class="btn btn-small" data-act="cardio-done" data-adj="${s.adj}" data-id="${s.id}">Done</button>
+  </div>`;
+}
+
+function trackCardHTML(t) {
+  const gap = pendingGap(S, t);
+  if (gap && !gap.small) {
+    return `<section class="card card-tape track-card">
+      <h2 class="h3">Back on track</h2>
+      <p>${esc(gapSentence(gap, t))} Gainloop can even it out over the next few days.</p>
+      <div class="card-actions"><a class="btn btn-primary" href="#ontrack">See your options</a><button class="btn-link" data-act="gap-leave">Leave it</button></div>
+    </section>`;
+  }
+  const a = currentPlan(t);
+  if (!a) return '';
+  const pr = adjustmentProgress(a, t);
+  const tt = dayTargets(S, pr.started ? t : a.start);
+  const due = cardioToDo(S, t).filter((s) => s.adj === a.id && s.d <= t);
+  return `<section class="card track-card">
+      <div class="card-top"><h2 class="h3">Back on track</h2><span class="muted">${pr.started ? `day ${pr.day} of ${a.days}` : 'starts tomorrow'}</span></div>
+      <p>${pr.started ? `${kcal(tt.kcal)} today (${kcalSigned(tt.delta)})` : `${kcal(tt.kcal)} a day for ${plural(a.days, 'day')} (${kcalSigned(tt.delta)})`}. Protein stays at ${tt.protein} g.</p>
+      ${due.map(cardioDueHTML).join('')}
+      <a class="link" href="#ontrack">Plan details</a>
+    </section>`;
+}
+
+function reassurance(gap) {
+  const goal = S.profile.goal;
+  if (gap.dir === 'over') {
+    return goal === 'build'
+      ? 'A day over your plan is normal and only adds a little extra. Evening it out keeps your weekly average where it should be, without big swings.'
+      : 'One day over your plan doesn’t undo your progress. Evening it out keeps your weekly average on target, without big swings.';
+  }
+  return goal === 'lean'
+    ? 'Eating much less than planned can cost muscle and make the next days harder. Adding some back keeps your weekly average where it should be.'
+    : 'Eating less than planned slows your progress a little. Adding it back over the next few days keeps your weekly average on target.';
+}
+
+const windowName = (days) => ({ 3: '3 days', 7: 'A week', 14: '2 weeks' }[days] || plural(days, 'day'));
+
+function otState(gap, rec) {
+  if (!ui.ot || ui.ot.key !== gapKey(gap)) ui.ot = { key: gapKey(gap), days: rec, cardio: false, ex: null };
+  return ui.ot;
+}
+const gapKey = (gap) => gap.days.flatMap((x) => x.items.map((i) => i.id)).join(',');
+
+function ontrackFormHTML(gap, t) {
+  const kg = C.currentWeight(S.weights, t);
+  const first = catchUpOptions(S, gap);
+  const st = otState(gap, first.recommended);
+  const offer = st.cardio ? cardioOffer(S, gap, st.days, kg, rules(), st.ex) : null;
+  const { options, recommended, total } = catchUpOptions(S, gap, offer);
+  const sel = options.find((o) => o.days === st.days) || options.find((o) => o.days === recommended);
+  const start = addDays(t, 1);
+  const tStart = dayTargets(S, start);
+  const n = S.nutrition;
+  const shiftK = sel.perDay;
+  const preview = `${kcal(clampKcal(tStart.kcal + shiftK))} a day from ${fmtDate(start, 'day')} for ${plural(sel.days, 'day')} (${kcalSigned(shiftK)} on your usual ${fmtInt(n.kcal)}). Protein stays at ${n.protein} g.`;
+  const cardioOpts = cardioExercises().filter((e) => e.custom || e.eq.includes(S.profile.equipment));
+  const curEx = offer ? exerciseById(offer.ex) : null;
+  return `<section class="section">
+      <p class="lede">${esc(gapSentence(gap, t))}</p>
+      <ul class="list gap-days">${gap.days.map((x) => `<li class="row"><span class="row-main"><span class="row-title">${esc(fmtDate(x.d, 'long'))}</span><span class="fine">${esc(x.items.map(itemText).join(', '))}</span></span><span class="row-amount">${kcalSigned(Math.round(x.diff.kcal))}</span></li>`).join('')}</ul>
+      <p>${esc(reassurance(gap))}</p>
+    </section>
+    <form data-form="ontrack" class="section" novalidate>
+      <fieldset class="field"><legend>Spread it over</legend>
+        <div class="options">${options.map((o) => `<input type="radio" id="ot-${o.days}" name="ot-days" value="${o.days}" data-change="ot"${o.days === sel.days ? ' checked' : ''}><label for="ot-${o.days}" class="option">
+          <span class="row-title">${windowName(o.days)}${o.days === recommended ? ' <span class="badge badge-tape">Suggested</span>' : ''}</span>
+          <span class="fine">${kcalSigned(o.perDay)} a day${o.capped ? `. That covers ${fmtInt(o.covers)} of the ${fmtInt(Math.abs(Math.round(total)))}: a bigger daily change wouldn’t be sensible, and check-ins pick up the rest` : ''}</span></label>`).join('')}</div>
+      </fieldset>
+      ${gap.dir === 'over' ? `<fieldset class="field"><legend>Cardio</legend>
+        <div class="check-row"><input type="checkbox" id="ot-cardio" name="ot-cardio" data-change="ot"${st.cardio ? ' checked' : ''}><label for="ot-cardio">Add some cardio, so the food change is smaller</label></div>
+        ${offer ? `<div class="field compact"><label for="ot-ex">Which cardio</label><select id="ot-ex" name="ot-ex" data-change="ot">${cardioOpts.map((e) => `<option value="${e.id}"${e.id === offer.ex ? ' selected' : ''}>${esc(e.name)}</option>`).join('')}</select></div>
+        <p class="fine">${offer.sessions} × ${offer.min} minutes of ${esc(lcFirst(curEx.name))} at ${EFFORTS[effortIndex(offer.effort)].name.toLowerCase()} pace, about ${fmtInt(offer.each)} kcal each. They’ll show on your Today screen.</p>` : ''}
+      </fieldset>` : ''}
+      <p class="note" id="ot-preview">${esc(preview)}</p>
+      <p class="fine">Gainloop never moves a day by more than 15% of your usual calories or below your floor of ${fmtInt(n.floor || 0)} kcal, and protein stays the same. Missed a session or a day? Don’t make it up: your next check-in adjusts from your real weight.</p>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Use this plan</button><button class="btn" type="button" data-act="gap-leave">Leave it</button></div>
+    </form>`;
+}
+
+function clampKcal(k) {
+  const n = S.nutrition;
+  return Math.max(n.floor || 0, Math.min(Math.round(n.kcal * 1.15), k));
+}
+
+function planHTML(a, t) {
+  const pr = adjustmentProgress(a, t);
+  const tt = dayTargets(S, pr.started ? t : a.start);
+  const end = addDays(a.start, a.days - 1);
+  const coach = a.coach
+    ? `<div class="coach"><h3 class="h3">Coach’s note</h3><p>${esc(a.coach.message)}</p>${a.coach.tips?.length ? `<ul class="notes">${a.coach.tips.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}<p class="fine">Written by AI from the plan above.</p></div>`
+    : ui.coachBusy === a.id
+      ? `<div class="coach"><p class="ai-wait">${I.ai} Writing a note on your plan…</p></div>`
+      : `<div class="coach">${ui.coachError ? `<p class="warn-text">${esc(ui.coachError)}</p>` : ''}<button class="btn btn-small" data-act="coach" data-id="${a.id}">${I.ai} Get a coach’s note</button></div>`;
+  return `<section class="section plan-box">
+      <div class="section-head"><h2 class="h2">Your plan</h2><span class="muted">${pr.started ? `day ${pr.day} of ${a.days}` : `starts ${dayWord(a.start, t)}`}</span></div>
+      <p><strong>${kcal(tt.kcal)} a day</strong> from ${fmtDate(a.start, 'day')} to ${fmtDate(end, 'day')} (${kcalSigned(tt.delta)}), with ${tt.carbs} g carbs and ${tt.fat} g fat. Protein stays at ${tt.protein} g. Your meal plan portions already match.</p>
+      ${a.cardio.length ? `<h3 class="h3">Extra cardio</h3><ul class="list">${a.cardio.map((s) => {
+        const ex = exerciseById(s.ex);
+        return `<li class="row"><button class="thumb-btn" data-act="guide" data-ex="${s.ex}" aria-label="How to do ${esc(ex?.name || '')}">${thumb(s.ex)}</button><span class="row-main"><span class="row-title">${s.min} min ${esc(lcFirst(ex?.name || 'cardio'))}</span><span class="fine">${esc(fmtDate(s.d, 'long'))}, about ${fmtInt(s.kcal)} kcal</span></span>${s.done ? `<span class="added">${I.check} Done</span>` : `<button class="btn btn-small" data-act="cardio-done" data-adj="${a.id}" data-id="${s.id}">Done</button>`}</li>`;
+      }).join('')}</ul>` : ''}
+      ${coach}
+      <button class="btn-link" data-act="plan-stop" data-id="${a.id}">Stop this plan</button>
+    </section>`;
+}
+
+function ontrackView() {
+  const t = today();
+  const gap = pendingGap(S, t);
+  const plans = (S.adjust || []).filter((a) => addDays(a.start, a.days) > t).sort((a, b) => (a.start < b.start ? -1 : 1));
+  const showForm = gap && !gap.small;
+  return `${backLink('#today', 'Today')}
+    <header class="screen-head"><div><h1 class="title">Back on track</h1></div></header>
+    ${showForm ? ontrackFormHTML(gap, t) : ''}
+    ${plans.map((a) => planHTML(a, t)).join('')}
+    ${!showForm && !plans.length ? `<section class="section"><p class="lede">You’re on track.</p><p>When you eat something that isn’t in your plan, or skip a meal, log it on Today. If it adds up to more than about ${fmtInt(200)} kcal, Gainloop offers to even it out over the next few days.</p><a class="btn" href="#log">Food log</a></section>` : ''}`;
+}
+
+function logView() {
+  const t = today();
+  const days = Array.from({ length: 14 }, (_, i) => addDays(t, -i));
+  return `${backLink('#today', 'Today')}
+    <header class="screen-head"><div><h1 class="title">Food log</h1></div></header>
+    <p class="muted">Your meal plan counts as eaten unless you log something different: a meal you skipped, something else instead, or something extra. Anything from the last ${LOOKBACK} days can be evened out on <a class="link" href="#ontrack">Back on track</a>.</p>
+    ${days.map((d, i) => {
+      const items = logFor(S, d)?.items || [];
+      const diff = diffOf(items);
+      return `<section class="log-day">
+        <div class="section-head"><h2 class="h3">${i === 0 ? 'Today' : i === 1 ? 'Yesterday' : esc(fmtDate(d, 'long'))}</h2><span class="${items.length ? (diff.kcal > 0 ? 'over-text' : 'under-text') : 'muted'}">${items.length ? (Math.abs(diff.kcal) < 1 ? 'on plan' : `${kcalSigned(Math.round(diff.kcal))} vs plan`) : 'as planned'}</span></div>
+        ${items.length ? `<ul class="list">${items.map((x) => `<li class="row"><span class="row-main"><span class="row-title">${esc(itemText(x))}</span><span class="fine">${x.kind === 'extra' ? 'Extra' : x.kind === 'skip' ? `−${fmtInt(x.planned?.kcal || 0)} kcal` : `Instead of ${esc(lcFirst(x.planned?.name || slotName(x.slot)))}`}${x.ate ? `, ${fmtInt(x.ate.kcal)} kcal` : ''}${x.handled && x.handled !== 'leave' ? ', evened out' : ''}</span></span>
+          <button class="icon-btn" data-act="log-del" data-d="${d}" data-id="${x.id}" aria-label="Remove">${I.close}</button></li>`).join('')}</ul>` : ''}
+        ${i < LOOKBACK ? `<button class="btn-link" data-act="log-add" data-d="${d}">${I.plus} Add something for ${i === 0 ? 'today' : i === 1 ? 'yesterday' : 'this day'}</button>` : ''}
+      </section>`;
+    }).join('')}`;
+}
+
+// ----- Sheets for logging food -----
+
+function logMealSheet(sh) {
+  const pm = plannedMeal(sh.d, sh.i);
+  if (!pm) return '<p>That meal isn’t in your plan any more.</p>';
+  if (sh.mode === 'instead') return foodForm({ d: sh.d, kind: 'instead', i: sh.i, slot: pm.slot });
+  const cur = loggedMeal(S, sh.d, sh.i);
+  const opt = (v, label, on) => `<li><button class="row row-button${on ? ' is-on' : ''}" data-act="log-meal-set" data-v="${v}"><span class="row-main"><span class="row-title">${label}</span></span>${on ? I.check : I.next}</button></li>`;
+  return `<p class="muted">In your plan: ${fmtInt(pm.kcal)} kcal and ${pm.p} g protein.</p>
+    <ul class="list">${opt('ate', 'I ate it as planned', !cur)}${opt('skip', 'I didn’t eat it', cur?.kind === 'skip')}${opt('instead', 'I had something else instead', cur?.kind === 'instead')}</ul>`;
+}
+
+function foodForm({ d, kind, i = null, slot = null }) {
+  const past = d !== today();
+  return `<form data-form="log-food" data-d="${d}" data-kind="${kind}"${i !== null ? ` data-i="${i}"` : ''}${slot ? ` data-slot="${slot}"` : ''} novalidate>
+    <div class="field"><label for="lf-text">What did you eat${kind === 'instead' ? ' instead' : ''}?</label><textarea id="lf-text" name="lf-text" rows="2" maxlength="300" placeholder="Two slices of pepperoni pizza and a can of cola"></textarea></div>
+    <button class="btn btn-small" type="button" data-act="log-estimate">${I.ai} Estimate with AI</button>
+    <div id="lf-est" aria-live="polite"></div>
+    <fieldset class="field macro-grid"><legend>For all of it</legend>
+      ${numBox('lf-kcal', '', 'kcal', { small: true })}${numBox('lf-p', '', 'g protein', { small: true })}${numBox('lf-c', '', 'g carbs', { small: true })}${numBox('lf-f', '', 'g fat', { small: true })}
+    </fieldset>
+    ${kind === 'extra' && past ? `<div class="field compact"><label for="lf-slot">Was it instead of a meal?</label><select id="lf-slot" name="lf-slot"><option value="">No, it was extra</option>${SLOTS.map((s) => `<option value="${s.id}">Instead of ${s.name.toLowerCase()}</option>`).join('')}</select></div>` : ''}
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Save</button></div>
+    <p class="fine">Estimating sends only what you type to Cloudflare’s AI. You can change the numbers before saving.</p>
+  </form>`;
+}
+
+function cardioSectionHTML() {
+  const t = today();
+  const fin = CARDIO_FINISH[S.profile.goal] || CARDIO_FINISH.build;
+  const pace = EFFORTS[effortIndex(fin.effort)].name.toLowerCase();
+  const mineCardio = (S.program.mine || []).filter((x) => isCardio(exerciseById(x.id)));
+  const extra = cardioToDo(S, t);
+  const options = cardioExercises().filter((e) => !e.custom && e.eq.includes(S.profile.equipment) && !(S.myExercises || []).includes(e.id));
+  return `<section class="section">
+      <div class="section-head"><h2 class="h2">Cardio</h2><a class="link" href="#library-cardio">All cardio</a></div>
+      ${extra.length ? `<h3 class="h3">Extra, to get back on track</h3>${extra.map(cardioDueHTML).join('')}` : ''}
+      ${mineCardio.length ? `<ul class="list">${mineCardio.map((x) => {
+        const ex = exerciseById(x.id);
+        return `<li class="row"><button class="thumb-btn" data-act="guide" data-ex="${ex.id}" aria-label="How to do ${esc(ex.name)}">${thumb(ex.id)}</button>
+          <span class="row-main"><span class="row-title">${esc(ex.name)}</span><span class="fine">${x.where.length ? `${fin.min} min at ${pace} pace, at the end of ${esc(andList(x.where))}` : esc(x.why)}</span></span>
+          <button class="icon-btn" data-act="mine-toggle" data-id="${ex.id}" aria-label="Remove ${esc(ex.name)}">${I.close}</button></li>`;
+      }).join('')}</ul>` : `<p class="muted">Add the cardio you like. It goes at the end of two sessions a week, ${fin.min} minutes at ${pace} pace${S.profile.goal === 'build' ? ', so it helps your heart and recovery without eating into your gains' : ''}.</p>`}
+      ${options.length ? `<div class="add-chips">${options.map((e) => `<button class="chip-btn" data-act="mine-toggle" data-id="${e.id}">${I.plus}<span>${esc(e.name)}</span></button>`).join('')}</div>` : ''}
+    </section>`;
+}
+
+function cardioSlotHTML(sid, sl, ex, i, dr) {
+  const t = today();
+  const hist = (S.exLog[ex.id] || []).filter((h) => h.d < t && h.min);
+  const last = hist[hist.length - 1];
+  const effort = sl.effort || 'easy';
+  const adv = cardioAdvice(ex, hist, sl.min || ex.rr?.[0] || 20, effort);
+  const burn = cardioKcal(ex, adv.min, C.currentWeight(S.weights, t), effort);
+  const sore = soreFor(ex.id);
+  const felt = [['easy', 'Easy'], ['ok', 'About right'], ['hard', 'Hard']].map(([v, l]) => `<input type="radio" id="cf-${i}-${v}" name="cf-${i}" value="${v}"${dr.felt === v ? ' checked' : ''} data-live="set" data-sid="${sid}" data-ex="${ex.id}" data-field="felt"><label for="cf-${i}-${v}">${l}</label>`).join('');
+  return `<article class="exercise is-cardio" data-ex="${ex.id}" data-cardio="1">
+      <header class="ex-head">
+        <div class="ex-title"><h2 class="h3">${esc(ex.name)}${sl.mine ? ' <span class="badge badge-line">You do this</span>' : ''}</h2>
+          <p class="fine">Cardio to finish, ${adv.min} min${burn ? `, about ${fmtInt(burn)} kcal` : ''}</p></div>
+        <button class="icon-btn" data-act="swap" data-sid="${sid}" data-ex="${ex.id}" aria-label="Swap ${esc(ex.name)}">${I.swap}</button>
+      </header>
+      <button class="ex-guide" data-act="guide" data-ex="${ex.id}">${thumb(ex.id)}<span class="ex-guide-text"><span>How to do it</span><span class="fine">${GUIDES[ex.id] ? esc(kitText(ex.id)) : 'Steps and a video link'}</span></span></button>
+      ${sore.length ? `<p class="warn">${I.alert} Go easy if your ${esc(andList(sore))} ${hurtVerb(sore)}, or swap it for something gentler, like the bike or cross trainer.</p>` : ''}
+      <p class="advice">${esc(adv.text)}</p>
+      ${last ? `<p class="fine">Last time, ${fmtDate(last.d, 'day')}: ${last.min} min${last.felt ? `, felt ${last.felt === 'ok' ? 'about right' : last.felt}` : ''}</p>` : ''}
+      <div class="log log-cardio">
+        <div class="log-weight"><label for="cm-${i}">Minutes</label>${numBox(`cm-${i}`, dr.min ?? '', 'min', { small: true, live: 'set', data: ` data-sid="${sid}" data-ex="${ex.id}" data-field="min"` })}</div>
+        <div class="log-felt"><span class="log-label" id="cfl-${i}">How did it feel?</span><div class="seg" role="radiogroup" aria-labelledby="cfl-${i}">${felt}</div></div>
+      </div>
+    </article>`;
+}
+
 // ----- Eat -----
 
 function eatView() {
@@ -829,6 +1133,7 @@ function eatView() {
   const di = ui.eatDay;
   const day = week.days[di];
   const tot = day ? dayTotals(day, byId) : null;
+  const dt = dayTargets(S, weekDate(S, di));
   const diet = S.profile.diet;
   const carbs = rules().carbCounts;
   const foodHealth = healthFor('food');
@@ -846,8 +1151,9 @@ function eatView() {
   return `<header class="screen-head"><h1 class="title">Eat</h1><a class="btn btn-small" href="#shop">Shopping list</a></header>
     ${demoBanner()}
     <section class="targets">
-      <p class="target-kcal"><strong>${fmtInt(n.kcal)}</strong> kcal a day</p>
-      <p class="macros"><span><strong>${n.protein} g</strong> protein</span><span><strong>${n.carbs} g</strong> carbs</span><span><strong>${n.fat} g</strong> fat</span></p>
+      <p class="target-kcal"><strong>${fmtInt(dt.kcal)}</strong> kcal ${dt.delta ? `on ${dayLong(di)}` : 'a day'}</p>
+      <p class="macros"><span><strong>${dt.protein} g</strong> protein</span><span><strong>${dt.carbs} g</strong> carbs</span><span><strong>${dt.fat} g</strong> fat</span></p>
+      ${dt.delta ? `<p class="fine adj-note">Back on track: ${kcalSigned(dt.delta)} on your usual ${fmtInt(n.kcal)}. <a class="link" href="#ontrack">Plan details</a></p>` : ''}
       <button class="btn-link" data-act="info" data-topic="calories">Why these numbers</button>
     </section>
     <section class="section">
@@ -868,9 +1174,9 @@ function eatView() {
       </button></li>`;
     }).join('')}</ul>
     <div class="day-total">
-      ${meter('Calories', tot.kcal, n.kcal, 'kcal')}
-      ${meter('Protein', tot.p, n.protein, 'g', true)}
-      ${carbs ? meter('Carbs', tot.c, n.carbs, 'g', false, true) : ''}
+      ${meter('Calories', tot.kcal, dt.kcal, 'kcal')}
+      ${meter('Protein', tot.p, dt.protein, 'g', true)}
+      ${carbs ? meter('Carbs', tot.c, dt.carbs, 'g', false, true) : ''}
     </div>` : '<p class="empty">No meals fit all of your rules. Loosen a rule or add your own meals.</p>'}
     <div class="actions-row">
       <a class="btn btn-primary" href="#pantry">Cook with what you have</a>
@@ -898,6 +1204,7 @@ function shopView() {
   return `${backLink('#eat', 'Eat')}
     <header class="screen-head"><div><h1 class="title">Shopping list</h1><p class="muted">${fmtDate(week.start, 'day')} to ${fmtDate(addDays(week.start, 6), 'day')}, all 7 days</p></div><button class="btn btn-small" data-act="copy-shop">${I.copy} Copy</button></header>
     ${groups.map((g) => `<section class="section"><h2 class="h2">${g}</h2><ul class="list shop">${list.groups.get(g).map((it) => `<li class="row"><input type="checkbox" id="sh-${it.id}" data-change="shop-tick" data-id="${it.id}"${ticks[it.id] ? ' checked' : ''}><label for="sh-${it.id}" class="row-main">${esc(it.name)}</label><span class="row-amount">${esc(it.amount)}</span></li>`).join('')}</ul></section>`).join('')}
+    ${list.ai.length ? `<section class="section"><h2 class="h2">For your AI meals</h2><ul class="list">${list.ai.map((x) => `<li class="row"><span class="row-main">${esc(x.name)}</span><span class="row-amount">${esc(x.amount)}</span></li>`).join('')}</ul></section>` : ''}
     ${list.custom.length ? `<section class="section"><h2 class="h2">Your own meals</h2><ul class="list">${list.custom.map((c) => `<li class="row"><span class="row-main">${esc(c.name)}</span><span class="row-amount">${c.portions} portions</span></li>`).join('')}</ul></section>` : ''}
     ${list.pantry.length ? `<section class="section"><h2 class="h2">Check you have</h2><p>${esc(list.pantry.join(', '))}</p></section>` : ''}`;
 }
@@ -909,6 +1216,7 @@ function shopText() {
     lines.push('', g);
     for (const it of items) lines.push(`- ${it.name}: ${it.amount}`);
   }
+  if (list.ai.length) { lines.push('', 'For your AI meals'); for (const x of list.ai) lines.push(`- ${x.name}: ${x.amount}`); }
   if (list.custom.length) { lines.push('', 'Your own meals'); for (const c of list.custom) lines.push(`- ${c.name}: ${c.portions} portions`); }
   if (list.pantry.length) lines.push('', `Check you have: ${list.pantry.join(', ')}`);
   return lines.join('\n');
@@ -1011,7 +1319,7 @@ function restoreView() {
 
 function changesView() {
   const list = [...S.changes].reverse();
-  const kind = { setup: 'Set up', checkin: 'Check-in', measure: 'New measurements', edit: 'Details changed' };
+  const kind = { setup: 'Set up', checkin: 'Check-in', measure: 'New measurements', edit: 'Details changed', track: 'Back on track', 'track-stop': 'Back on track stopped' };
   return `${backLink('#you', 'You')}
     <header class="screen-head"><h1 class="title">Plan changes</h1></header>
     <p class="muted">Every change to your calories and training, with the reason.</p>
@@ -1040,8 +1348,16 @@ function mathsView() {
       <h2 class="h2">Exercises you already do</h2>
       <p>Your exercises go to the front of the list for their muscle, so they’re picked first wherever your equipment allows. If one doesn’t fit its usual place, like a chin-up when your biceps get curls, it takes the place of one of the planner’s own picks for that muscle. If you do more exercises for a muscle than it has places in your week, the extras are left out and the app says why.</p>
       <p>Exercises you add yourself get a standard rep range for how you track them: 8 to 12 reps with weights, 8 to 15 with bodyweight, or 20 to 60 seconds for holds.</p>
-      <h2 class="h2">Cooking with what you have</h2>
-      <p>Meal ideas are put together on your phone from the foods you tick: a protein food, a carb and vegetables for lunch and dinner, and simpler combinations for breakfast and snacks. Portions are set for one serving, then scaled with the rest of the day to hit your calories. Your food rules and health rules apply to every idea, and recipes from the library show up too when you have everything, or are only one or two foods short.</p>
+      <h2 class="h2">Meal ideas from the AI</h2>
+      <p>When you type the food you have, Gainloop asks an AI model running on Cloudflare (OpenAI’s open gpt-oss model on Workers AI) for meals that use only those foods, plus oil, salt, spices, herbs, garlic and lemon. It sends your food list, the calories and protein for that meal and your food rules, such as halal, allergies and carb limits. Your health conditions themselves aren’t sent, only what they change about food. Nothing else is sent, and Cloudflare doesn’t use it to train AI.</p>
+      <p>Before you see an idea, the app adds up its calories again from each ingredient, sizes the portion to that meal’s share of your day (breakfast about a quarter, lunch and dinner about 30% each, a snack 15%), and checks every ingredient against your food rules. Ideas that break a rule are left out, and ideas that use a food you didn’t list are kept apart. The AI’s numbers are estimates, so check labels if you count closely.</p>
+      <h2 class="h2">Cooking from a list</h2>
+      <p>The tick list works on your phone without the AI: a protein food, a carb and vegetables for lunch and dinner, and simpler combinations for breakfast and snacks, sized with the rest of the day to hit your calories. It only shows meals you can make from what you tick. Recipes you’re one food short of are kept in a separate list for your next shop.</p>
+      <h2 class="h2">Food log and getting back on track</h2>
+      <p>Your meal plan counts as eaten unless you log something different: a meal you skipped, something else instead, or something extra. Each entry keeps what was planned and what you ate, so the difference stays right even if the plan changes later. The AI can estimate what something was, and you can change its numbers.</p>
+      <p>When what you logged in the last week adds up to more than about 200 kcal either way, Gainloop offers to spread it over 3 days, a week or 2 weeks, starting tomorrow. The suggestion is the shortest that keeps each day within 10% of your usual calories. No day ever moves more than 15%, or below your calorie floor. Protein stays the same, and the change comes from carbs and fat (45% from carbs with diabetes, 60% otherwise). If you ate more than planned, up to 3 cardio sessions a week can cover up to half of it, so the food change is smaller. Anything a sensible change can’t cover is left to your check-ins, which adjust from your real weight. A short coach’s note is written by the AI from the plan, but the numbers are always worked out by the app.</p>
+      <h2 class="h2">Cardio</h2>
+      <p>Cardio you add goes at the end of two sessions a week: 15 minutes at an easy pace while building muscle, 20 minutes for recomp and 25 for leaning out, moderate. Calories burned are estimated from the 2024 Adult Compendium of Physical Activities: the activity’s energy cost (MET) minus resting, times your weight and the time. With a sore knee, back or shoulder, running, jumping and rowing are flagged, and back-on-track cardio picks something easier on the joints. With a heart condition, cardio is kept easy to moderate.</p>
       <h2 class="h2">Health conditions</h2>
       <p>These follow general guidance and are deliberately cautious. Your doctor’s or care team’s advice comes first.</p>
       <ul class="notes">
@@ -1060,6 +1376,8 @@ function mathsView() {
         <li><a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5317029/" target="_blank" rel="noopener">Key points from the American Diabetes Association’s exercise guidance</a></li>
         <li><a href="https://professional.heart.org/en/science-news/resistance-exercise-training-in-individuals-with-and-without-cardiovascular-disease-2023-update" target="_blank" rel="noopener">American Heart Association: resistance training with and without heart disease (2023)</a></li>
         <li><a href="https://kdigo.org/guidelines/ckd-evaluation-and-management/" target="_blank" rel="noopener">KDIGO 2024 guideline for chronic kidney disease</a></li>
+        <li><a href="https://pacompendium.com/wp-content/uploads/2024/01/2024-adult-compendium_1_2024.pdf" target="_blank" rel="noopener">2024 Adult Compendium of Physical Activities</a></li>
+        <li><a href="https://developers.cloudflare.com/workers-ai/platform/privacy/" target="_blank" rel="noopener">Cloudflare Workers AI: how your data is used</a></li>
       </ul>
     </section>`;
 }
@@ -1134,11 +1452,12 @@ function guideSheet(sh) {
   const actions = fromSwap
     ? `<button class="btn btn-primary" data-act="swap-to" data-from="${fromSwap.ex}" data-to="${ex.id}">Use this instead</button>
        <button class="btn" data-act="sheet-back">Back to the list</button>`
-    : (S.profile ? `<button class="btn" data-act="mine-toggle" data-id="${ex.id}">${mine ? 'Remove from exercises I already do' : 'Add to exercises I already do'}</button>` : '');
+    : (S.profile ? `<button class="btn" data-act="mine-toggle" data-id="${ex.id}">${isCardio(ex) ? (mine ? 'Remove from my cardio' : 'Add to my cardio') : mine ? 'Remove from exercises I already do' : 'Add to exercises I already do'}</button>` : '');
   return `<div class="guide">${pictureStage(ex)}
     ${pic?.note ? `<p class="pic-note">${esc(pic.note)}</p>` : ''}
     <div class="guide-bar"><p class="guide-meta"><span>${repText(ex, rr)}</span><span>${restText(ex)}</span></p>${looping ? `<button class="pic-toggle" data-act="pic-toggle" aria-pressed="${ui.picPaused}">${ui.picPaused ? 'Play' : 'Pause'}</button>` : ''}</div>
-    <p class="guide-works">Works your ${muscleName(ex.m).toLowerCase()}${also.length ? `, plus your ${andList(also)}` : ''}.</p>
+    <p class="guide-works">${isCardio(ex) ? `Works your heart and lungs${also.length ? `, plus your ${andList(also)}` : ''}.` : `Works your ${muscleName(ex.m).toLowerCase()}${also.length ? `, plus your ${andList(also)}` : ''}.`}</p>
+    ${isCardio(ex) ? cardioGuideHTML(ex) : ''}
     ${sore.length ? `<p class="note">${I.alert} You said your ${andList(sore)} ${hurtVerb(sore)}. This one can load ${sorePlural(sore) ? 'them' : 'it'}, so go lighter, or swap it for something else if it hurts.</p>` : ''}
     ${g ? `<h3 class="h3">You’ll need</h3><ul class="kit-list">${g.kit.map((k) => `<li>${esc(k)}</li>`).join('')}</ul>
     <h3 class="h3">How to do it</h3><ol class="steps-list">${g.how.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>` : ''}
@@ -1149,6 +1468,12 @@ function guideSheet(sh) {
     </div>
     ${pic ? `<p class="fine pic-credit">Pictures: <a href="${PICTURE_CREDIT_URL}" target="_blank" rel="noopener">RepDB (repdb.co)</a></p>` : ''}
   </div>`;
+}
+
+// How hard to go, and roughly what it burns for you
+function cardioGuideHTML(ex) {
+  const kg = S.profile ? C.currentWeight(S.weights, today()) : null;
+  return `<ul class="effort-list">${EFFORTS.map((e) => `<li><strong>${e.name}:</strong> ${e.talk.toLowerCase()}${kg ? `, about ${fmtInt(cardioKcal(ex, 30, kg, e.id))} kcal in 30 minutes for you` : ''}</li>`).join('')}</ul>`;
 }
 
 // The exercise picker is used in setup (ctx 'setup', saved at the end) and on its own screen (ctx 'state')
@@ -1208,8 +1533,8 @@ function refreshPicker(ctx) {
 function customExSheet(sh) {
   return `<form data-form="custom-ex" data-ctx="${sh.ctx}" novalidate>
     ${field('ce-name', 'Name', `<input id="ce-name" name="ce-name" maxlength="50" value="${esc(sh.name || '')}">`)}
-    <fieldset class="field"><legend>Main muscle it works</legend>${seg('ce-m', MUSCLES.map((m) => [m.id, m.name]), sh.m || 'chest')}</fieldset>
-    <fieldset class="field"><legend>How you track it</legend>${seg('ce-load', [['kg', 'Weight and reps'], ['bw', 'Reps only'], ['s', 'Seconds']], 'kg')}</fieldset>
+    <fieldset class="field"><legend>Main muscle it works</legend>${seg('ce-m', [...MUSCLES.map((m) => [m.id, m.name]), [CARDIO.id, CARDIO.name]], sh.m || 'chest')}</fieldset>
+    <fieldset class="field"><legend>How you track it</legend>${seg('ce-load', [['kg', 'Weight and reps'], ['bw', 'Reps only'], ['s', 'Seconds'], ['min', 'Minutes']], 'kg')}<p class="hint">Cardio is always tracked in minutes.</p></fieldset>
     <div class="form-actions"><button class="btn btn-primary" type="submit">Add exercise</button></div>
   </form>`;
 }
@@ -1231,11 +1556,13 @@ function libraryList(q, f) {
   return list.map((e) => `<li><button class="row row-button" data-act="guide" data-ex="${e.id}">${thumb(e.id)}<span class="row-main"><span class="row-title">${esc(e.name)}</span><span class="fine">${muscleName(e.m)}${GUIDES[e.id] ? `, ${esc(lcFirst(kitText(e.id, true)))}` : ', your own'}</span></span>${I.next}</button></li>`).join('');
 }
 
-function libraryView() {
+function libraryView(param) {
+  if (param === CARDIO.id && ui.libRoute !== param) ui.libFilter = CARDIO.id;
+  ui.libRoute = param;
   return `${backLink('#train', 'Train')}
     <header class="screen-head"><div><h1 class="title">Exercise library</h1><p class="muted">${libraryCount()} exercises, each with how to do it${customExercises().length ? `, plus ${customExercises().length} of your own` : ''}</p></div></header>
     <div class="field compact"><input id="lib-q" type="search" autocomplete="off" aria-label="Search exercises" placeholder="Search by name or muscle" value="${esc(ui.libQuery)}" data-live="lib-search"></div>
-    <div class="filter-row">${seg('lib-m', [['all', 'All'], ...MUSCLES.map((m) => [m.id, m.name])], ui.libFilter, 'lib-filter')}</div>
+    <div class="filter-row">${seg('lib-m', [['all', 'All'], [CARDIO.id, CARDIO.name], ...MUSCLES.map((m) => [m.id, m.name])], ui.libFilter, 'lib-filter')}</div>
     <ul class="list" id="lib-list">${libraryList(ui.libQuery, ui.libFilter)}</ul>`;
 }
 
@@ -1258,6 +1585,8 @@ function ideaCard(m, slot, kind, missing = []) {
   </article>`;
 }
 
+// Only meals made entirely from the foods you ticked (plus the cupboard basics). Recipes you're one food
+// short of are kept apart, in a closed list, for when you're shopping.
 function pantryResults() {
   const have = S.pantry.have;
   ui.ideas = new Map();
@@ -1266,15 +1595,23 @@ function pantryResults() {
   const diet = dietOf(S);
   const r = rules();
   const { allowed } = allowedMeals(S);
-  return `<h2 class="h2">What you can make</h2>${SLOTS.map((slot) => {
+  const short = [];
+  const slots = SLOTS.map((slot) => {
     const ideas = mealIdeas(slot.id, have, diet, r, 2);
-    const recipes = matchRecipes(allowed, have, slot.id).filter((x) => !x.meal.gen && !ideas.some((i) => i.id === x.meal.id)).slice(0, 2);
+    // a recipe with the same name as an idea made from your foods would just repeat it
+    const names = new Set(ideas.map((i) => i.name.toLowerCase()));
+    const matched = matchRecipes(allowed, have, slot.id).filter((x) => !x.meal.gen && !ideas.some((i) => i.id === x.meal.id) && !names.has(x.meal.name.toLowerCase()));
+    const recipes = matched.filter((x) => !x.missing.length).slice(0, 2);
+    short.push(...matched.filter((x) => x.missing.length === 1).slice(0, 2).map((x) => ({ ...x, slot: slot.id })));
     ui.pantryCount += ideas.length + recipes.length;
     const hint = slot.id === 'snack' ? 'Add something like yogurt, eggs, tuna or fruit.' : slot.id === 'breakfast' ? 'Add eggs, oats with milk, or yogurt.' : 'Add a protein food, like chicken, eggs, tofu, fish or beans.';
     return `<section class="slot-head"><h3 class="h3">${slot.name}</h3>
-      ${ideas.length || recipes.length ? `<div class="ideas">${ideas.map((m) => ideaCard(m, slot.id, 'gen')).join('')}${recipes.map((x) => ideaCard(x.meal, slot.id, 'recipe', x.missing)).join('')}</div>` : `<p class="empty">Nothing yet. ${hint}</p>`}
+      ${ideas.length || recipes.length ? `<div class="ideas">${ideas.map((m) => ideaCard(m, slot.id, 'gen')).join('')}${recipes.map((x) => ideaCard(x.meal, slot.id, 'recipe')).join('')}</div>` : `<p class="empty">Nothing yet. ${hint}</p>`}
     </section>`;
-  }).join('')}`;
+  }).join('');
+  return `<h2 class="h2">What you can make</h2>${slots}
+    ${short.length ? `<details class="short-list"><summary><span class="row-title">One food short (${short.length})</span><span class="fine">Recipes that need one thing you didn’t tick, for your next shop</span></summary>
+      <div class="ideas">${short.map((x) => ideaCard(x.meal, x.slot, 'recipe', x.missing)).join('')}</div></details>` : ''}`;
 }
 
 const pantryBarText = () => (ui.pantryCount ? `See ${plural(ui.pantryCount, 'meal idea')}` : '');
@@ -1289,7 +1626,7 @@ function updatePantry() {
   if (sum) sum.textContent = haveSummary();
   const bar = document.getElementById('pantry-bar');
   if (bar) {
-    bar.hidden = !ui.pantryCount;
+    bar.hidden = !ui.pantryCount || !document.querySelector('.food-picker[open]');
     bar.querySelector('button').textContent = pantryBarText();
   }
 }
@@ -1306,14 +1643,16 @@ function pantryView() {
   const results = pantryResults();
   return `${backLink('#eat', 'Eat')}
     <header class="screen-head"><h1 class="title">Cook with what you have</h1></header>
-    <p class="muted">Tick the foods you have or can easily get. You’ll get meal ideas made from them, sized to your calories and following your food rules${rules().items.length ? ' and health' : ''}.</p>
-    <details class="food-picker"${have.length ? '' : ' open'}>
+    ${aiBoxHTML()}
+    <h2 class="h2 pick-head">Or tick foods from a list</h2>
+    <p class="muted">These ideas are put together on your phone from the foods you tick, sized to your calories and following your food rules${rules().items.length ? ' and health' : ''}. They only use what you tick.</p>
+    <details class="food-picker">
       <summary><span class="row-title">Your foods</span><span class="fine" id="have-summary">${esc(haveSummary())}</span></summary>
       ${groups.map((g) => `<section class="food-group"><h2 class="h3">${g.group}</h2><div class="chips">${g.items.map((it) => `<input type="checkbox" id="pf-${it.id}" value="${it.id}" data-change="pantry"${have.includes(it.id) ? ' checked' : ''}><label for="pf-${it.id}">${esc(it.name)}</label>`).join('')}</div></section>`).join('')}
       <p class="fine pantry-foot">Oil, garlic, spices, herbs and lemon are assumed. Foods your rules leave out aren’t listed. <button class="btn-link" data-act="pantry-clear"${have.length ? '' : ' hidden'}>Untick everything</button></p>
     </details>
     <div id="pantry-results">${results}</div>
-    <div class="finish-bar pantry-bar" id="pantry-bar"${ui.pantryCount ? '' : ' hidden'}><button class="btn btn-primary btn-wide" data-act="pantry-show">${pantryBarText()}</button></div>`;
+    <div class="finish-bar pantry-bar" id="pantry-bar" hidden><button class="btn btn-primary btn-wide" data-act="pantry-show">${pantryBarText()}</button></div>`;
 }
 
 // The "See meal ideas" bar is for when the ideas are below the screen; it hides once they're in view
@@ -1326,6 +1665,106 @@ function watchPantryBar() {
   if (!res || !bar || typeof IntersectionObserver === 'undefined') return;
   pantryIO = new IntersectionObserver(([e]) => bar.classList.toggle('away', e.isIntersecting || e.boundingClientRect.top < 0));
   pantryIO.observe(res);
+}
+
+// ----- Meal ideas from the AI -----
+
+const AI_SLOTS = [['any', 'Any meal'], ['breakfast', 'Breakfast'], ['lunch', 'Lunch'], ['dinner', 'Dinner'], ['snack', 'Snack']];
+
+// One request per meal, run side by side so each idea shows as soon as it's ready
+function aiRequests(slot) {
+  if (slot === 'any') return ['breakfast', 'lunch', 'dinner'].map((s) => ({ slot: s, style: '' }));
+  return [{ slot, style: 'quick and simple, 25 minutes or less' }, { slot, style: 'something a bit different, that could also be cooked in a batch' }];
+}
+
+function aiIdeaCard(m) {
+  const carbs = rules().carbCounts;
+  return `<article class="idea ai-idea">
+    <p class="idea-name">${esc(m.name)}</p>
+    <p class="idea-meta">${esc(slotName(m.slot))}${m.mins ? `, about ${m.mins} min` : ''}, ${fmtInt(m.kcal)} kcal, ${fmtInt(m.p)} g protein${carbs ? `, ${fmtInt(m.c)} g carbs` : ''}</p>
+    ${m.extras?.length ? `<p class="need">Also uses ${esc(andList(m.extras.map(lcFirst)))}, which wasn’t in your list</p>` : ''}
+    <p class="idea-items">${esc(mealLines(m, 1).join(', '))}</p>
+    ${m.steps?.length ? `<details class="how"><summary>How to make it</summary><ol class="steps-list">${m.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol></details>` : ''}
+    ${needsHalalNote(m, S.profile.diet) ? '<p class="fine">Use halal meat.</p>' : ''}
+    <div class="idea-actions"><button class="btn btn-small" data-act="ai-use" data-id="${m.id}">Use for ${esc(useLabel())}’s ${esc(m.slot)}</button></div>
+  </article>`;
+}
+
+function aiResultsHTML() {
+  const res = S.pantry.ai;
+  const busy = ui.aiBusy;
+  if (busy) {
+    const done = res?.meals?.length || 0;
+    return `<div class="ai-wait" role="status"><span class="ai-dots" aria-hidden="true"></span><p><strong>Putting meals together from your food…</strong><br><span class="fine">Each idea shows as soon as it’s ready, usually within 20 to 30 seconds.${done ? ` ${plural(done, 'idea')} ready so far.` : ''}</span></p></div>
+      ${done ? `<div class="ideas">${res.meals.filter((m) => !m.extras?.length).map(aiIdeaCard).join('')}</div>` : ''}`;
+  }
+  if (ui.aiError) return `<p class="note warn-note">${esc(ui.aiError)}</p>`;
+  if (!res?.meals) return '';
+  const fit = res.meals.filter((m) => !m.extras?.length);
+  const extra = res.meals.filter((m) => m.extras?.length);
+  return `${res.left ? `<p class="fine">Left out ${plural(res.left, 'idea')} that didn’t fit your food rules.</p>` : ''}
+    ${fit.length ? `<div class="ideas">${fit.map(aiIdeaCard).join('')}</div>` : `<p class="empty">The AI couldn’t make a full meal from just those foods. Add a protein food (like eggs, chicken, beans or yogurt) and a carb (like rice, bread or potatoes).</p>`}
+    ${extra.length ? `<details class="short-list"><summary><span class="row-title">Ideas that need one more food (${extra.length})</span><span class="fine">They use something you didn’t list</span></summary><div class="ideas">${extra.map(aiIdeaCard).join('')}</div></details>` : ''}
+    <p class="fine ai-foot">Ideas and amounts are AI estimates: check labels if you count closely. <button class="btn-link" data-act="ai-again">Get different ideas</button></p>`;
+}
+
+function updateAIResults() {
+  const box = document.getElementById('ai-results');
+  if (box) box.innerHTML = aiResultsHTML();
+  const btn = document.querySelector('form[data-form="ai-meals"] button[type="submit"]');
+  if (btn) {
+    btn.disabled = ui.aiBusy;
+    btn.textContent = ui.aiBusy ? 'Thinking…' : 'Get meal ideas';
+  }
+}
+
+async function runAIMeals(foods, slot, again = false) {
+  // sized for the day the meal would go into (the day picked on Eat), including any back-on-track change
+  const day = dayTargets(S, weekDate(S, ui.eatDay));
+  const targets = slotTargets(day);
+  const diet = dietOf(S);
+  const r = rules();
+  const reqs = aiRequests(slot);
+  const before = again ? (S.pantry.ai?.meals || []).map((m) => m.name).join(', ') : '';
+  S.pantry.ai = { text: foods, slot, at: today(), meals: [], left: 0 };
+  ui.aiBusy = true;
+  ui.aiError = '';
+  updateAIResults();
+  let failure = null;
+  await Promise.all(reqs.map(async (q) => {
+    try {
+      const body = await callAI({ task: 'meals', foods, slot: q.slot, count: 1, style: q.style, avoidNames: before, targets: { [q.slot]: targets[q.slot] }, rules: aiRules(diet, r) });
+      for (const raw of body.meals || []) {
+        const s = SLOTS.some((x) => x.id === raw.slot) ? raw.slot : q.slot;
+        const m = aiMeal(raw, s, targets[s], { diet, rules: r, have: foods });
+        if (!m) continue;
+        if (m.breaks.length) { S.pantry.ai.left += 1; continue; }
+        if (S.pantry.ai.meals.some((x) => x.id === m.id || x.name.toLowerCase() === m.name.toLowerCase())) continue;
+        S.pantry.ai.meals.push(m);
+      }
+    } catch (err) {
+      failure ||= err;
+    }
+    updateAIResults();
+  }));
+  ui.aiBusy = false;
+  if (!S.pantry.ai.meals.length && failure) ui.aiError = failure instanceof AIError ? failure.message : 'The AI couldn’t answer just now. Try again in a minute.';
+  save();
+  updateAIResults();
+}
+
+function aiBoxHTML() {
+  return `<section class="ai-box">
+      <h2 class="h2">${I.ai} Tell the AI what food you have</h2>
+      <form data-form="ai-meals" novalidate>
+        <div class="field"><label for="ai-foods" class="sr-only">Your food</label>
+          <textarea id="ai-foods" name="ai-foods" rows="3" maxlength="600" placeholder="chicken thighs, rice, peppers, onions, yogurt, chapati, eggs">${esc(S.pantry.text || '')}</textarea></div>
+        <fieldset class="field compact"><legend>Ideas for</legend>${seg('ai-slot', AI_SLOTS, ui.aiSlot, 'ai-slot')}</fieldset>
+        <button class="btn btn-primary btn-wide" type="submit"${ui.aiBusy ? ' disabled' : ''}>${ui.aiBusy ? 'Thinking…' : 'Get meal ideas'}</button>
+      </form>
+      <p class="fine">The AI only uses the foods you list, plus oil, salt, spices, herbs, garlic and lemon. Meals are sized to your plan and follow your food rules${rules().items.length ? ' and health' : ''}. Getting ideas sends this list, your meal targets and your food rules to Cloudflare’s AI, and nothing else. It isn’t used to train AI.</p>
+      <div id="ai-results" aria-live="polite">${aiResultsHTML()}</div>
+    </section>`;
 }
 
 // ----- Health -----
@@ -1389,10 +1828,12 @@ const VIEWS = {
   library: libraryView,
   pantry: pantryView,
   health: healthView,
+  ontrack: ontrackView,
+  log: logView,
 };
 
 const TAB_OF = {
-  today: 'today', checkin: 'today', body: 'body', measure: 'body', frame: 'body', bodyfat: 'body',
+  today: 'today', checkin: 'today', ontrack: 'today', log: 'today', body: 'body', measure: 'body', frame: 'body', bodyfat: 'body',
   train: 'train', session: 'train', myex: 'train', library: 'train',
   eat: 'eat', shop: 'eat', mealnew: 'eat', rules: 'eat', pantry: 'eat',
   you: 'you', profile: 'you', restore: 'you', changes: 'you', maths: 'you', health: 'you',
@@ -1426,6 +1867,7 @@ function render() {
   syncCustoms();
   const r = route();
   const view = document.getElementById('view');
+  if (S.profile) pruneLog(S, today());
   if (S.profile && ensureCurrentWeek(S, today())) save();
   if (r.name !== 'checkin') ui.checkin = null;
   if (r.name !== 'setup' && r.name !== 'profile') ui.setup = null;
@@ -1499,6 +1941,8 @@ function sheetBody(sh) {
     return `<p>${sh.text}</p><div class="form-actions"><button class="btn ${sh.danger ? 'btn-danger' : 'btn-primary'}" data-act="${sh.act}" data-confirmed="1"${sh.data || ''}>${sh.confirm}</button><button class="btn" data-act="sheet-close">Cancel</button></div>`;
   }
   if (sh.type === 'meal') return mealSheet(sh);
+  if (sh.type === 'log-meal') return logMealSheet(sh);
+  if (sh.type === 'log-food') return foodForm(sh);
   if (sh.type === 'swap') return swapSheet(sh);
   if (sh.type === 'copy') return `<p class="muted">Select all of this text and copy it, then keep it somewhere safe, like your notes or email.</p><textarea class="copy-area" rows="8" readonly>${esc(sh.text)}</textarea>`;
   return '';
@@ -1524,7 +1968,7 @@ function mealSheet(sh) {
         <ul class="list">${gen.map((g) => `<li><button class="row row-button" data-act="meal-swap-gen" data-id="${g.id}"><span class="row-main"><span class="row-title">${esc(g.name)}</span><span class="fine">New idea from your foods, ${meta(mealMacros(g))}</span></span>${I.next}</button></li>`).join('')}${ready.map((x) => `<li><button class="row row-button" data-act="meal-swap" data-to="${x.meal.id}"><span class="row-main"><span class="row-title">${esc(x.meal.name)}</span><span class="fine">You have everything, ${meta(x.macros)}</span></span>${I.next}</button></li>`).join('')}</ul>
         <p class="fine"><a class="link" href="#pantry">Change your foods</a></p>`
       : `<p class="note">${have.length ? 'Nothing for this meal from the foods you ticked yet.' : 'Tell Gainloop what food you have and it suggests meals you can make with it.'} <a class="link" href="#pantry">${have.length ? 'Add more foods' : 'Pick your foods'}</a></p>`;
-    const opts = swapOptions(day, sh.i, allowed, targetsOf(S)).filter((o) => !gen.some((g) => g.id === o.meal.id) && !ready.some((x) => x.meal.id === o.meal.id));
+    const opts = swapOptions(day, sh.i, allowed, targetsFor(S, weekDate(S, sh.day))).filter((o) => !gen.some((g) => g.id === o.meal.id) && !ready.some((x) => x.meal.id === o.meal.id));
     return `<p class="muted">Swapping changes portion sizes for the day so you still hit your calories.</p>
       ${fromHave}
       <h3 class="h3 swap-all">All ${(SLOTS.find((s) => s.id === e.slot)?.name || 'meal').toLowerCase()} options</h3>
@@ -1535,12 +1979,12 @@ function mealSheet(sh) {
   const x = day.x;
   const lines = mealLines(m, x);
   const pantry = pantryLine(m);
-  return `<p class="muted">${SLOTS.find((s) => s.id === e.slot).name}${m.gen ? ', made from your foods' : ''}${m.mins ? `, about ${m.mins} min` : ''}${x !== 1 ? `, ${x} portions` : ''}</p>
+  return `<p class="muted">${SLOTS.find((s) => s.id === e.slot).name}${m.gen ? ', made from your foods' : m.ai ? ', an AI idea' : ''}${m.mins ? `, about ${m.mins} min` : ''}${x !== 1 ? `, ${x} portions` : ''}</p>
     <p class="macros"><span><strong>${Math.round(mm.kcal * x)}</strong> kcal</span><span><strong>${Math.round(mm.p * x)} g</strong> protein</span><span><strong>${Math.round(mm.c * x)} g</strong> carbs</span><span><strong>${Math.round(mm.f * x)} g</strong> fat</span></p>
     ${needsHalalNote(m, S.profile.diet) ? `<p class="note">Use halal meat.</p>` : ''}
     ${lines.length ? `<h3 class="h3">You need</h3><ul class="ingredients">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : '<p class="muted">Your own meal. Portion size scales with your calories.</p>'}
     ${pantry.length ? `<p class="fine">Plus ${esc(pantry.join(', '))}.</p>` : ''}
-    ${m.how ? `<h3 class="h3">How to make it</h3><p>${esc(m.how)}</p>` : ''}
+    ${m.steps?.length ? `<h3 class="h3">How to make it</h3><ol class="steps-list">${m.steps.map((st) => `<li>${esc(st)}</li>`).join('')}</ol>` : m.how ? `<h3 class="h3">How to make it</h3><p>${esc(m.how)}</p>` : ''}
     <div class="form-actions"><button class="btn" data-act="meal-swap-open">${I.swap} Swap this meal</button></div>`;
 }
 
@@ -1698,6 +2142,14 @@ const ACTIONS = {
     const logged = [];
     for (const art of document.querySelectorAll('article.exercise[data-ex]')) {
       const exId = art.dataset.ex;
+      if (art.dataset.cardio) {
+        const min = parseNum(art.querySelector('[data-field="min"]')?.value);
+        if (!min || min <= 0) continue;
+        const felt = art.querySelector('[data-field="felt"]:checked')?.value || null;
+        S.exLog[exId] = (S.exLog[exId] || []).filter((h) => h.d !== t).concat({ d: t, min: Math.round(min), felt });
+        logged.push(exId);
+        continue;
+      }
       const reps = [...art.querySelectorAll('input.rep')].map((r) => parseNum(r.value)).filter((r) => r !== null && r > 0).map((r) => Math.round(r));
       if (!reps.length) continue;
       const ex = exerciseById(exId);
@@ -1727,7 +2179,7 @@ const ACTIONS = {
   'meal-swap'(el) {
     const sh = ui.sheet;
     const byId = mealsById(S);
-    S.mealWeek.days[sh.day] = applySwap(S.mealWeek.days[sh.day], sh.i, el.dataset.to, targetsOf(S), byId);
+    S.mealWeek.days[sh.day] = applySwap(S.mealWeek.days[sh.day], sh.i, el.dataset.to, targetsFor(S, weekDate(S, sh.day)), byId);
     closeSheet();
     commit(`Swapped to ${lcFirst(byId.get(el.dataset.to).name)}`);
   },
@@ -1847,6 +2299,103 @@ const ACTIONS = {
     location.hash = '#eat';
     toast(`${meal.name} added to ${when}’s ${slot}`);
   },
+  // ----- Food log and back on track -----
+  'log-meal'(el) {
+    const d = el.dataset.d;
+    const i = Number(el.dataset.i);
+    const pm = plannedMeal(d, i);
+    if (!pm) return;
+    openSheet({ type: 'log-meal', title: esc(pm.name), d, i, mode: 'choose' });
+  },
+  'log-meal-set'(el) {
+    const sh = ui.sheet;
+    if (!sh) return;
+    if (el.dataset.v === 'instead') {
+      ui.sheet = { ...sh, mode: 'instead', title: 'What did you have instead?' };
+      renderSheet();
+      return;
+    }
+    clearMealLog(sh.d, sh.i);
+    if (el.dataset.v === 'skip') {
+      const pm = plannedMeal(sh.d, sh.i);
+      addLogItem(S, sh.d, { kind: 'skip', slot: pm.slot, mealIdx: sh.i, planned: pm, ate: null });
+    }
+    closeSheet();
+    commit(el.dataset.v === 'skip' ? 'Logged as skipped' : 'Back to as planned');
+  },
+  'log-add'(el) {
+    const d = el.dataset.d;
+    openSheet({ type: 'log-food', title: d === today() ? 'Something else you ate' : `Something you ate ${dayWord(d)}`, d, kind: 'extra' });
+  },
+  'log-del'(el) {
+    removeLogItem(S, el.dataset.d, el.dataset.id);
+    commit('Removed from your log');
+  },
+  async 'log-estimate'() {
+    const form = document.querySelector('form[data-form="log-food"]');
+    const box = document.getElementById('lf-est');
+    const text = fval(form, 'lf-text').trim();
+    if (!text) { toast('Say what you ate first'); return; }
+    if (ui.estBusy || !box) return;
+    ui.estBusy = true;
+    box.innerHTML = `<p class="ai-wait">${I.ai} Estimating…</p>`;
+    try {
+      const body = await callAI({ task: 'estimate', text });
+      const tot = estimateTotal(body.items);
+      for (const [k, name] of [['kcal', 'lf-kcal'], ['p', 'lf-p'], ['c', 'lf-c'], ['f', 'lf-f']]) {
+        const inp = fe(form, name);
+        if (inp) inp.value = tot[k];
+      }
+      form.dataset.src = 'ai';
+      box.innerHTML = `<ul class="est-list">${(body.items || []).map((x) => `<li><span>${esc(x.food)}${x.amount ? ` <span class="fine">${esc(x.amount)}</span>` : ''}</span><span>${fmtInt(x.kcal)} kcal</span></li>`).join('')}</ul>
+        <p class="fine">${body.confidence === 'low' ? 'A rough guess.' : 'An estimate.'} Change the numbers if you know better.</p>`;
+    } catch (err) {
+      box.innerHTML = `<p class="warn-text">${esc(err?.message || 'The AI couldn’t answer.')} You can type the calories yourself.</p>`;
+    } finally {
+      ui.estBusy = false;
+    }
+  },
+  'gap-leave'() {
+    leaveGap(S, today());
+    ui.ot = null;
+    save();
+    if (route().name === 'ontrack') location.hash = '#today';
+    else render();
+    toast('Left as it is. Your check-ins adjust from your real weight.');
+  },
+  coach(el) { requestCoach(el.dataset.id); },
+  'cardio-done'(el) {
+    const t = today();
+    const s = markCardio(S, el.dataset.adj, el.dataset.id, true, t);
+    if (s) S.exLog[s.ex] = (S.exLog[s.ex] || []).filter((h) => h.d !== t).concat({ d: t, min: s.min, felt: null });
+    commit('Cardio done');
+  },
+  'plan-stop'(el) {
+    if (!el.dataset.confirmed) {
+      openSheet({ type: 'confirm', title: 'Stop this plan?', text: 'Your calories go back to your usual target from today. What you logged stays in your food log.', confirm: 'Stop the plan', act: 'plan-stop', data: ` data-id="${el.dataset.id}"` });
+      return;
+    }
+    stopAdjustment(S, el.dataset.id);
+    rescaleMeals(S);
+    S.changes.push({ d: today(), kind: 'track-stop', items: [{ area: 'calories', text: 'Back-on-track plan stopped', why: `Calories are back to your usual ${kcal(S.nutrition.kcal)} a day.` }] });
+    closeSheet();
+    commit('Plan stopped');
+  },
+
+  // ----- AI meal ideas -----
+  'ai-use'(el) {
+    const m = (S.pantry.ai?.meals || []).find((x) => x.id === el.dataset.id);
+    if (!m || !S.mealWeek) { toast('That idea has gone. Ask the AI again.'); return; }
+    const when = useLabel();
+    useMeal(m, ui.eatDay, m.slot, null);
+    save();
+    location.hash = '#eat';
+    toast(`${m.name} added to ${when}’s ${m.slot}`);
+  },
+  'ai-again'() {
+    if (!S.pantry.text || ui.aiBusy) return;
+    runAIMeals(S.pantry.text, ui.aiSlot, true);
+  },
   'meal-swap-gen'(el) {
     const sh = ui.sheet;
     const meal = ui.ideas.get(el.dataset.id);
@@ -1856,6 +2405,47 @@ const ACTIONS = {
     commit(`Swapped to ${lcFirst(meal.name)}`);
   },
 };
+
+// Back to "as planned" for meal number i on date d
+function clearMealLog(d, i) {
+  const day = S.foodLog?.[d];
+  if (!day) return;
+  day.items = day.items.filter((x) => !(x.mealIdx === i && (x.kind === 'skip' || x.kind === 'instead')));
+  if (!day.items.length) delete S.foodLog[d];
+}
+
+// A short, kind note from the AI on a back-on-track plan. The plan itself is already set.
+async function requestCoach(id) {
+  const a = (S.adjust || []).find((x) => x.id === id);
+  if (!a || ui.coachBusy) return;
+  ui.coachBusy = id;
+  ui.coachError = '';
+  if (route().name === 'ontrack') render();
+  const days = (a.from || []).map((d) => {
+    const items = (logFor(S, d)?.items || []).filter((x) => x.handled === a.id);
+    return { label: dayLong(weekdayIndex(d)), kcal: Math.round(diffOf(items).kcal), foods: items.map(itemText).join(', ') };
+  });
+  const tt = dayTargets(S, a.start);
+  const counts = new Map();
+  for (const c of a.cardio) counts.set(c.ex, (counts.get(c.ex) || 0) + 1);
+  try {
+    const body = await callAI({
+      task: 'coach',
+      goal: S.profile.goal,
+      gap: { kcal: a.gap.kcal, days },
+      plan: { days: a.days, kcal: tt.kcal, perDay: a.kcal, protein: tt.protein, cardio: [...counts].map(([ex, count]) => ({ name: exerciseById(ex)?.name || 'cardio', min: a.cardio.find((c) => c.ex === ex).min, count })) },
+      rules: aiRules(dietOf(S), rules()),
+    });
+    const live = (S.adjust || []).find((x) => x.id === id);
+    if (live && body.message) live.coach = { message: body.message, tips: body.tips || [] };
+    save();
+  } catch (err) {
+    ui.coachError = err instanceof AIError ? err.message : 'The coach note couldn’t load. Your plan is set either way.';
+  } finally {
+    ui.coachBusy = false;
+    if (route().name === 'ontrack') render();
+  }
+}
 
 // After the list of exercises you already do changes. In setup it's saved at the end.
 function afterMineChange(ctx, message) {
@@ -1869,17 +2459,23 @@ function afterMineChange(ctx, message) {
 
 // Put a meal into a day of the plan: in place of meal number `index`, or the first meal in `slot`
 function useMeal(meal, di, slot, index) {
-  if (meal.gen && !S.customMeals.some((m) => m.id === meal.id)) S.customMeals.push({ ...meal });
+  if ((meal.gen || meal.ai) && !S.customMeals.some((m) => m.id === meal.id)) {
+    const keep = { ...meal };
+    delete keep.extras;
+    delete keep.breaks;
+    S.customMeals.push(keep);
+  }
+  const targets = targetsFor(S, weekDate(S, di));
   const byId = mealsById(S);
   const day = S.mealWeek.days[di];
   const i = index ?? day.meals.findIndex((e) => e.slot === slot);
   if (i >= 0) {
-    S.mealWeek.days[di] = applySwap(day, i, meal.id, targetsOf(S), byId);
+    S.mealWeek.days[di] = applySwap(day, i, meal.id, targets, byId);
     return;
   }
   const order = SLOTS.map((s) => s.id);
   const meals = [...day.meals, { slot, id: meal.id }].sort((a, b) => order.indexOf(a.slot) - order.indexOf(b.slot));
-  S.mealWeek.days[di] = rescaleDay({ ...day, meals }, targetsOf(S), byId);
+  S.mealWeek.days[di] = rescaleDay({ ...day, meals }, targets, byId);
 }
 
 const CHANGES = {
@@ -1919,6 +2515,12 @@ const CHANGES = {
     save();
     updatePantry();
   },
+  ot(el) {
+    const form = el.closest('form');
+    ui.ot = { ...(ui.ot || {}), days: Number(fval(form, 'ot-days')) || ui.ot?.days || 7, cardio: fchecked(form, 'ot-cardio'), ex: fval(form, 'ot-ex') || ui.ot?.ex || null };
+    render();
+  },
+  'ai-slot'(el) { ui.aiSlot = el.value; },
   'lib-filter'(el) {
     ui.libFilter = el.value;
     const list = document.getElementById('lib-list');
@@ -1941,6 +2543,8 @@ const LIVE = {
   set(el) {
     const dr = sessionDraft(el.dataset.sid, el.dataset.ex);
     if (el.dataset.field === 'kg') dr.kg = el.value;
+    else if (el.dataset.field === 'min') dr.min = el.value;
+    else if (el.dataset.field === 'felt') dr.felt = el.value;
     else {
       dr.reps ||= [];
       dr.reps[Number(el.dataset.k)] = el.value;
@@ -2091,6 +2695,7 @@ const FORMS = {
       id: uid('u'), name, m, k: ['biceps', 'triceps', 'calves', 'abs', 'forearms'].includes(m) ? 'i' : 'c', load,
       rr: load === 's' ? [20, 60] : load === 'bw' ? [8, 15] : [8, 12], step: 2.5, eq: ['gym', 'home', 'bw'], custom: true,
     };
+    if (m === CARDIO.id || load === 'min') Object.assign(ex, { m: CARDIO.id, k: 'c', load: 'min', rr: [15, 40], met: [4, 6, 8] });
     customs.push(ex);
     mine.push(ex.id);
     syncCustoms();
@@ -2100,6 +2705,59 @@ const FORMS = {
     if (q) q.value = '';
     refreshPicker(ctx);
     toast(ctx === 'state' ? `Added ${name}. Sessions updated.` : `Added ${name}`);
+  },
+  'log-food'(form) {
+    const d = form.dataset.d;
+    const k = parseNum(fval(form, 'lf-kcal'));
+    if (!k || k < 1 || k > 8000) { toast('Add the calories, or tap Estimate with AI'); return; }
+    const num = (name) => Math.max(0, Math.round(parseNum(fval(form, name)) || 0));
+    const ate = { text: fval(form, 'lf-text').trim().replace(/\s+/g, ' ').slice(0, 120) || 'Something else', kcal: Math.round(k), p: num('lf-p'), c: num('lf-c'), f: num('lf-f'), src: form.dataset.src || 'manual' };
+    if (form.dataset.kind === 'instead') {
+      const i = Number(form.dataset.i);
+      const pm = plannedMeal(d, i);
+      clearMealLog(d, i);
+      addLogItem(S, d, { kind: 'instead', slot: pm?.slot || form.dataset.slot || null, mealIdx: i, planned: pm, ate });
+    } else {
+      const slot = fval(form, 'lf-slot');
+      if (slot) {
+        const pl = plannedSlot(d, slot);
+        if (pl.mealIdx !== null) clearMealLog(d, pl.mealIdx);
+        addLogItem(S, d, { kind: 'instead', slot, mealIdx: pl.mealIdx, planned: pl, ate });
+      } else {
+        addLogItem(S, d, { kind: 'extra', ate });
+      }
+    }
+    closeSheet();
+    commit('Logged');
+  },
+  ontrack() {
+    const t = today();
+    const gap = pendingGap(S, t);
+    if (!gap || gap.small) { render(); return; }
+    const st = ui.ot || {};
+    const offer = st.cardio ? cardioOffer(S, gap, st.days, C.currentWeight(S.weights, t), rules(), st.ex) : null;
+    const adj = applyCatchUp(S, t, { days: st.days || 7, cardio: offer, rules: rules() });
+    if (!adj) return;
+    rescaleMeals(S);
+    const tt = dayTargets(S, adj.start);
+    const items = [{ area: 'calories', text: `${kcalSigned(adj.kcal)} a day for ${plural(adj.days, 'day')}, from ${fmtDate(adj.start, 'day')}`, why: `${gapSentence(gap, t)} Spreading it out keeps your weekly average on target. Protein stays at ${tt.protein} g, and carbs and fat carry the change.` }];
+    if (adj.cardio.length) items.push({ area: 'training', text: `${plural(adj.cardio.length, 'extra cardio session')} of ${adj.cardio[0].min} minutes`, why: `${exerciseById(adj.cardio[0].ex)?.name || 'Cardio'} at ${adj.cardio[0].effort} pace, about ${fmtInt(adj.cardio[0].kcal)} kcal each, so the food change can be smaller.` });
+    S.changes.push({ d: t, kind: 'track', items });
+    ui.ot = null;
+    save();
+    render();
+    window.scrollTo(0, 0);
+    toast('Plan set. Your meal portions now match it.');
+    requestCoach(adj.id);
+  },
+  'ai-meals'(form) {
+    const text = fval(form, 'ai-foods').trim().replace(/\s+/g, ' ');
+    if (text.length < 3) { toast('List a few foods you have first'); return; }
+    if (ui.aiBusy) return;
+    S.pantry.text = text.slice(0, 600);
+    ui.aiSlot = fval(form, 'ai-slot') || ui.aiSlot;
+    save();
+    runAIMeals(S.pantry.text, ui.aiSlot);
   },
   health(form) {
     const t = today();
@@ -2178,6 +2836,8 @@ function wire() {
       e.target.blur();
     }
   });
+  // opening or closing the food list shows or hides its "See meal ideas" bar
+  document.addEventListener('toggle', (e) => { if (e.target.matches?.('.food-picker')) updatePantry(); }, true);
   window.addEventListener('hashchange', () => {
     ui.sheet = null; // a link inside a sheet goes to a new screen, so the sheet closes
     render();

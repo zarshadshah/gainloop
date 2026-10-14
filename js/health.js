@@ -27,9 +27,9 @@ export const PAIN = [
 
 // Exercises that tend to load a sore area. They're left out when there is another option for that muscle.
 export const STRESS = {
-  knee: ['squat', 'hack-squat', 'split-squat', 'reverse-lunge', 'box-pistol', 'leg-ext', 'nordic'],
-  back: ['deadlift', 'rdl', 'db-rdl', 'bb-row', 'backpack-row', 'squat', 'kb-swing', 'ohp', 'standing-calf', 'superman'],
-  shoulder: ['dips', 'bench', 'incline-bench', 'cg-bench', 'ohp', 'db-press', 'pike-push-up', 'feet-up-pike', 'bench-dip', 'db-pullover', 'deficit-push-up'],
+  knee: ['squat', 'hack-squat', 'split-squat', 'reverse-lunge', 'box-pistol', 'leg-ext', 'nordic', 'run', 'treadmill-run', 'skipping', 'jumping-jacks', 'burpees', 'stair-climber'],
+  back: ['deadlift', 'rdl', 'db-rdl', 'bb-row', 'backpack-row', 'squat', 'kb-swing', 'ohp', 'standing-calf', 'superman', 'rower', 'burpees'],
+  shoulder: ['dips', 'bench', 'incline-bench', 'cg-bench', 'ohp', 'db-press', 'pike-push-up', 'feet-up-pike', 'bench-dip', 'db-pullover', 'deficit-push-up', 'burpees', 'mountain-climbers'],
 };
 
 export const blankHealth = () => ({ diabetes: 'none', conditions: [], pain: [], other: '' });
@@ -68,6 +68,7 @@ export function healthRules(raw) {
     pain: h.pain,
     repFloor: 0,
     stopShort: null,
+    cardioMax: 'hard',
     checkFirst: [],
     train: [],
     food: [],
@@ -103,7 +104,8 @@ export function healthRules(raw) {
   if (has('heart')) {
     r.repFloor = Math.max(r.repFloor, 10);
     r.stopShort = '3';
-    r.train.push('Keep every set comfortable: at least 10 reps, stopping about 3 reps before failure. Stop and get help if you have chest pain, unusual breathlessness, dizziness or a racing heartbeat.');
+    r.cardioMax = 'moderate';
+    r.train.push('Keep every set comfortable: at least 10 reps, stopping about 3 reps before failure. Keep cardio at an easy to moderate pace, where you can still talk. Stop and get help if you have chest pain, unusual breathlessness, dizziness or a racing heartbeat.');
     r.checkFirst.push('Check with your GP or heart team before you start, and show them what this plan includes.');
     r.items.push({ id: 'heart', name: 'Heart condition', areas: ['train'], changes: ['At least 10 reps a set', 'Stop about 3 reps before failure', 'Warning signs to stop'] });
   }

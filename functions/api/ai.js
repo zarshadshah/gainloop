@@ -73,9 +73,10 @@ Hard rules:
 5. Steps: 2 to 5 short steps in UK English, metric units, oven in °C.
 Answer with JSON only, no other text, in exactly this shape:
 ${MEAL_SHAPE}`;
+  const style = clean(d.style, 100);
   const user = `Foods I have: ${clean(d.foods, 600)}
 Give me ${count} different meal idea${count > 1 ? 's' : ''}${slot === 'any' ? ' across these meals' : ` for ${slot}`}:
-${wanted}
+${wanted}${style ? `\nMake it: ${style}` : ''}${d.avoidNames ? `\nDon't repeat these: ${clean(d.avoidNames, 200)}.` : ''}
 Food rules:
 ${rulesText(d.rules)}`;
   return { system, user, maxTokens: 3000 };
@@ -96,7 +97,7 @@ function coachPrompt(d) {
   const days = (Array.isArray(gap.days) ? gap.days : []).slice(0, 7).map((x) => `- ${clean(x.label, 30)}: ${Math.round(num(x.kcal, -9000, 9000) || 0)} kcal vs plan${x.foods ? ` (${clean(x.foods, 160)})` : ''}`).join('\n');
   const cardio = (Array.isArray(plan.cardio) ? plan.cardio : []).slice(0, 4).map((c) => `${num(c.count, 1, 7)} x ${num(c.min, 5, 90)} min ${clean(c.name, 40)}`).join(', ');
   const system = `You are a calm, encouraging coach inside Gainloop, a UK fitness app. Someone's eating went off their plan and the app has already worked out a safe plan to get back on track. Explain it and give practical tips.
-Rules: no guilt or shame, and never call food good or bad. Never suggest skipping meals, fasting, purging, or extra exercise beyond the plan. Don't change any of the numbers. If being off plan happens often, suggest a more flexible plan rather than stricter rules. UK English.
+Rules: no guilt or shame. Never call food good, bad, junk, a cheat or empty calories. Never suggest skipping meals, fasting, purging, or extra exercise beyond the plan. Don't change any of the numbers. If being off plan happens often, suggest a more flexible plan rather than stricter rules. UK English.
 Answer with JSON only, no other text, in exactly this shape:
 {"message":"2 to 3 sentences, under 70 words","tips":["under 20 words","under 20 words","under 20 words"]}`;
   const user = `Goal: ${goal}.
@@ -145,7 +146,7 @@ export function parseJSON(text) {
   }
 }
 
-async function ask(env, { system, user, maxTokens }, schema, report = null) {
+async function ask(env, { system, user, maxTokens }, schema) {
   const attempts = [
     { model: MODELS.main, input: { instructions: system, input: user, reasoning: { effort: 'low' } } },
     { model: MODELS.main, input: { messages: [{ role: 'system', content: system }, { role: 'user', content: user }], max_tokens: maxTokens, temperature: 0.4 } },
@@ -153,17 +154,13 @@ async function ask(env, { system, user, maxTokens }, schema, report = null) {
   ];
   let lastError = 'no answer';
   for (const a of attempts) {
-    const t0 = Date.now();
     try {
       const res = await env.AI.run(a.model, a.input);
-      const text = textOf(res);
-      const data = parseJSON(text);
-      report?.push({ model: a.model, shape: a.input.messages ? 'messages' : 'responses', ms: Date.now() - t0, ok: !!data, keys: res && typeof res === 'object' ? Object.keys(res).slice(0, 8) : typeof res, sample: clean(text, 300) });
+      const data = parseJSON(textOf(res));
       if (data) return { data, model: a.model };
       lastError = 'unreadable answer';
     } catch (err) {
       lastError = clean(err?.message || err, 160);
-      report?.push({ model: a.model, shape: a.input.messages ? 'messages' : 'responses', ms: Date.now() - t0, ok: false, error: lastError });
       // the daily free allowance is used up: every model will say the same
       if (/limit|quota|capacity|neuron|429/i.test(lastError)) break;
     }
@@ -241,28 +238,8 @@ const SCHEMAS = {
   },
 };
 
-// Temporary: time other models on the same meal request, to pick the best balance of speed and quality
-const BENCH = ['@cf/google/gemma-4-26b-a4b-it', '@cf/meta/llama-4-scout-17b-16e-instruct', '@cf/mistralai/mistral-small-3.1-24b-instruct', '@cf/qwen/qwen3-30b-a3b-fp8', '@cf/zai-org/glm-4.7-flash', '@cf/openai/gpt-oss-20b', '@cf/meta/llama-3.3-70b-instruct-fp8-fast', '@cf/openai/gpt-oss-120b'];
-async function bench(env, d) {
-  if (!BENCH.includes(d.model)) return { status: 400, body: { error: 'model' } };
-  const p = mealsPrompt(d);
-  const t0 = Date.now();
-  try {
-    const input = d.shape === 'responses'
-      ? { instructions: p.system, input: p.user, reasoning: { effort: d.effort || 'low' } }
-      : { messages: [{ role: 'system', content: p.system }, { role: 'user', content: p.user }], max_tokens: 2500, temperature: 0.4 };
-    const res = await env.AI.run(d.model, input);
-    const text = textOf(res);
-    const data = parseJSON(text);
-    return { status: 200, body: { model: d.model, ms: Date.now() - t0, usage: res?.usage || null, ok: !!data, meals: (data?.meals || []).map(tidyMeal).filter(Boolean), raw: data ? undefined : clean(text, 800) } };
-  } catch (err) {
-    return { status: 200, body: { model: d.model, ms: Date.now() - t0, error: clean(err?.message || err, 300) } };
-  }
-}
-
 export async function runTask(env, d) {
   const task = d?.task;
-  if (task === 'bench') return bench(env, d);
   if (task === 'meals') {
     if (!clean(d.foods)) return { status: 400, body: { error: 'Tell me what food you have first.' } };
     const { data, model } = await ask(env, mealsPrompt(d), SCHEMAS.meals);
@@ -306,49 +283,7 @@ export async function onRequestPost({ request, env }) {
   }
 }
 
-// Setup check jobs: kept in this server's memory only while it stays warm
-const JOBS = globalThis.__glJobs || (globalThis.__glJobs = new Map());
-
-// A quick health check. ?check=gl-quick runs one small real request and reports each attempt (for setting up).
-export async function onRequestGet({ env, request, waitUntil }) {
-  const base = { ok: true, ai: !!env.AI, model: MODELS.main };
-  const url = new URL(request.url);
-  const check = url.searchParams.get('check');
-  if (check === 'gl-job' && env.AI) {
-    const id = clean(url.searchParams.get('id'), 20);
-    if (url.searchParams.get('start') === '1' && !JOBS.has(id)) {
-      const job = { started: Date.now(), status: 'running', report: [] };
-      JOBS.set(id, job);
-      const count = num(url.searchParams.get('count'), 1, 4) || 3;
-      const p = mealsPrompt({ foods: 'beef mince, potatoes, baked beans, mature cheddar, hummus, bananas, honey', slot: url.searchParams.get('slot') || 'any', count, targets: { breakfast: { kcal: 650, p: 35 }, lunch: { kcal: 750, p: 40 }, dinner: { kcal: 750, p: 40 }, snack: { kcal: 300, p: 15 } }, rules: { halal: true, avoid: ['nuts'], dislikes: 'mushrooms' } });
-      waitUntil((async () => {
-        try {
-          const r = await ask(env, p, SCHEMAS.meals, job.report);
-          Object.assign(job, { status: 'done', used: r.model, data: r.data });
-        } catch (err) {
-          Object.assign(job, { status: 'error', error: clean(err?.message || err, 200) });
-        }
-        job.ms = Date.now() - job.started;
-      })());
-      return json({ id, status: 'started' });
-    }
-    return json({ id, ...(JOBS.get(id) || { status: 'unknown' }) });
-  }
-  if (!env.AI || !['gl-quick', 'gl-meal'].includes(check)) return json(base);
-  const started = Date.now();
-  const report = [];
-  try {
-    const p = check === 'gl-meal'
-      ? mealsPrompt({ foods: 'chicken thighs, basmati rice, peppers, onions, Greek yogurt', slot: 'dinner', count: 1, targets: { dinner: { kcal: 700, p: 45, c: 75, f: 20 } }, rules: { halal: true } })
-      : estimatePrompt({ text: 'a banana and a glass of semi-skimmed milk' });
-    const wait = Math.min(25, Number(new URL(request.url).searchParams.get('wait')) || 25) * 1000;
-    const out = await Promise.race([
-      ask(env, p, check === 'gl-meal' ? SCHEMAS.meals : SCHEMAS.estimate, report),
-      new Promise((resolve) => { setTimeout(() => resolve({ timeout: true }), wait); }),
-    ]);
-    if (out.timeout) return json({ ...base, ms: Date.now() - started, timeout: true, report });
-    return json({ ...base, ms: Date.now() - started, used: out.model, report, data: out.data });
-  } catch (err) {
-    return json({ ...base, ms: Date.now() - started, report, error: clean(err?.message || err, 200) });
-  }
+// A quick health check: is the AI connected?
+export async function onRequestGet({ env }) {
+  return json({ ok: true, ai: !!env.AI, model: MODELS.main });
 }

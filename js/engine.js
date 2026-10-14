@@ -7,10 +7,18 @@ import { filterMeals, planWeek, rescaleDay } from './meals.js';
 import { SITE_REASON, buildProgram } from './plan.js';
 import { addDays, fmtInt, mondayOf, rng, round } from './util.js';
 import { demoState } from './store.js';
+import { dayTargets } from './track.js';
 
 export const mealsById = (state) => new Map([...MEALS, ...(state.customMeals || [])].map((m) => [m.id, m]));
 
 export const targetsOf = (state) => ({ kcal: state.nutrition.kcal, protein: state.nutrition.protein });
+
+// One day's targets, with any back-on-track change for that day
+export const targetsFor = (state, d) => {
+  const t = dayTargets(state, d);
+  return { kcal: t.kcal, protein: t.protein };
+};
+export const weekDate = (state, i) => addDays(state.mealWeek.start, i);
 
 // Health conditions turned into planning rules
 export const rulesOf = (state) => healthRules(state.profile?.health);
@@ -32,7 +40,8 @@ export function refreshProgram(state) {
 export function refreshMeals(state, today, reshuffle = false) {
   const { allowed } = allowedMeals(state);
   const seed = reshuffle || !state.mealWeek ? Math.floor(Math.random() * 1e9) : state.mealWeek.seed;
-  state.mealWeek = planWeek(allowed, targetsOf(state), seed, mondayOf(today), { carbAware: !!rulesOf(state).carbCap });
+  const start = mondayOf(today);
+  state.mealWeek = planWeek(allowed, targetsOf(state), seed, start, { carbAware: !!rulesOf(state).carbCap, targetsFor: (i) => targetsFor(state, addDays(start, i)) });
   return state.mealWeek;
 }
 
@@ -49,7 +58,7 @@ export function ensureCurrentWeek(state, today) {
 export function rescaleMeals(state) {
   if (!state.mealWeek) return;
   const byId = mealsById(state);
-  state.mealWeek.days = state.mealWeek.days.map((d) => rescaleDay(d, targetsOf(state), byId));
+  state.mealWeek.days = state.mealWeek.days.map((d, i) => rescaleDay(d, targetsFor(state, weekDate(state, i)), byId));
 }
 
 function bodyBasis(state, today) {

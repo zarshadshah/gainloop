@@ -26,7 +26,7 @@ export function tokens(text) {
 // Words that name a muscle, as tokens() writes them
 const musclesByWord = new Map([
   ...MUSCLES.flatMap((m) => tokens(m.name).concat(tokens(m.id)).map((w) => [w, m.id])),
-  ['pec', 'chest'], ['delt', 'shoulders'], ['calf', 'calves'], ['ab', 'abs'],
+  ['pec', 'chest'], ['delt', 'shoulders'], ['calf', 'calves'], ['ab', 'abs'], ['cardio', 'cardio'], ['conditioning', 'cardio'],
 ]);
 
 function scoreName(q, name) {

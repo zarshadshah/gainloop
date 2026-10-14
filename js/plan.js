@@ -1,6 +1,6 @@
 // Training plan: weekly sets per muscle, a split that fits your days and time, exercises for your equipment,
 // and double-progression advice. Rule-based so every number can be explained.
-import { EXERCISES, MUSCLES, customExercises, exerciseById, muscleName } from './data/exercises.js';
+import { EFFORTS, EXERCISES, MUSCLES, customExercises, effortIndex, exerciseById, isCardio, muscleName } from './data/exercises.js';
 import { clamp, lcFirst, sum } from './util.js';
 
 export const BASE_SETS = { beginner: 10, intermediate: 12, advanced: 14 };
@@ -36,6 +36,16 @@ const PROGRESSIONS = new Set(EXERCISES.filter((e) => e.next).map((e) => e.next))
 
 export const setsPerSession = (minutes) => clamp(Math.round((minutes - 8) / 2.6), 10, 32);
 export const estimateMinutes = (sets) => Math.round(sets * 2.6 + 8);
+
+// Cardio you already do goes at the end of up to two sessions a week each: kept easy while building
+// muscle so it helps your heart and recovery without eating into your gains.
+export const CARDIO_FINISH = { build: { min: 15, effort: 'easy' }, recomp: { min: 20, effort: 'moderate' }, lean: { min: 25, effort: 'moderate' } };
+const finishFor = (profile) => CARDIO_FINISH[profile.goal] || CARDIO_FINISH.build;
+// Evenly spaced sessions for the j-th cardio: 0 and 2 of four sessions, then 1 and 3 for the next
+function spread(n, j) {
+  if (n <= 1) return [0];
+  return [...new Set([j % n, (j + Math.ceil(n / 2)) % n])];
+}
 
 export function eligible(ex, profile) {
   if (!ex.eq.includes(profile.equipment)) return false;
@@ -236,7 +246,7 @@ export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
   const swappedIn = new Set(Object.values(swaps || {}));
   for (const id of mine) {
     const ex = exerciseById(id);
-    if (!ex || placed.has(id) || swaps?.[id] || (!ex.custom && !eligible(ex, profile))) continue;
+    if (!ex || isCardio(ex) || placed.has(id) || swaps?.[id] || (!ex.custom && !eligible(ex, profile))) continue;
     let best = null;
     for (const s of sessions) {
       if (s.slots.some((x) => x.ex === id)) continue;
@@ -254,9 +264,23 @@ export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
     }
   }
 
+  // 5. Cardio you already do, as a finisher in up to two sessions a week each
+  const fin = finishFor(profile);
+  [...mine].map((id) => exerciseById(id)).filter((ex) => isCardio(ex) && (ex.custom || eligible(ex, profile))).forEach((own, j) => {
+    // a cardio swapped for another one (rower for the bike, say) takes its place
+    const to = swaps?.[own.id] ? exerciseById(swaps[own.id]) : null;
+    const ex = to && isCardio(to) && (to.custom || eligible(to, profile)) ? to : own;
+    for (const i of spread(sessions.length, j)) {
+      if (sessions[i].slots.some((x) => x.ex === ex.id)) continue;
+      sessions[i].slots.push({ ex: ex.id, m: 'cardio', cardio: true, min: fin.min, effort: fin.effort, ...(ex === own ? { mine: true } : {}) });
+    }
+    placed.add(own.id);
+  });
+
   for (const s of sessions) {
     const rank = (sl) => {
       const ex = exerciseById(sl.ex);
+      if (sl.cardio) return 5;
       if (sl.m === 'abs' && !sl.priority) return 4;
       if (ex.k === 'c') return sl.priority ? 0 : 1;
       return sl.priority ? 2 : 3;
@@ -264,12 +288,12 @@ export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
     s.slots.sort((a, b) => rank(a) - rank(b)
       || (a.priority && b.priority ? priOrder.indexOf(a.m) - priOrder.indexOf(b.m) : 0)
       || ORDER.indexOf(a.m) - ORDER.indexOf(b.m));
-    s.sets = sum(s.slots.map((x) => x.sets));
-    s.minutes = estimateMinutes(s.sets);
+    s.sets = sum(s.slots.map((x) => x.sets || 0));
+    s.minutes = estimateMinutes(s.sets) + sum(s.slots.map((x) => x.min || 0));
   }
 
   const done = {};
-  for (const s of sessions) for (const sl of s.slots) done[sl.m] = (done[sl.m] || 0) + sl.sets;
+  for (const s of sessions) for (const sl of s.slots) if (!sl.cardio) done[sl.m] = (done[sl.m] || 0) + sl.sets;
 
   // Which of your own exercises made it in, and why any didn't
   const mineReport = [...mine].map((id) => {
@@ -280,7 +304,8 @@ export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
     if (!where.length) {
       const barOnly = ex.bar && ex.eq.includes(profile.equipment) && profile.equipment !== 'gym' && !profile.pullupBar;
       if (!ex.custom && !eligible(ex, profile)) {
-        why = barOnly ? 'It needs a pull-up bar. If you have one, tick it in your training details.'
+        why = isCardio(ex) ? 'It needs gym equipment, and you train at home. A brisk walk, running or skipping work anywhere.'
+          : barOnly ? 'It needs a pull-up bar. If you have one, tick it in your training details.'
           : profile.equipment === 'gym' ? 'It’s a version for training at home, so your plan uses gym exercises for that muscle.'
             : 'It needs equipment you said you don’t have.';
       } else if (swaps?.[id]) why = 'You swapped it for something else.';
@@ -339,9 +364,22 @@ export function whySets(program, muscle, profile) {
   return parts.join(' ');
 }
 
-export const restText = (ex) => (ex.heavy ? '2 to 3 min rest' : ex.k === 'c' ? '2 min rest' : '60 to 90 s rest');
+export const restText = (ex) => (isCardio(ex) ? 'at a steady pace' : ex.heavy ? '2 to 3 min rest' : ex.k === 'c' ? '2 min rest' : '60 to 90 s rest');
 
-export const repText = (ex, rr = ex.rr) => (ex.load === 's' ? `${rr[0]} to ${rr[1]} s` : `${rr[0]} to ${rr[1]} reps`);
+export const repText = (ex, rr = ex.rr) => (ex.load === 'min' ? `${rr[0]} to ${rr[1]} min` : ex.load === 's' ? `${rr[0]} to ${rr[1]} s` : `${rr[0]} to ${rr[1]} reps`);
+
+// Cardio: same time and effort until it feels comfortable, then a few more minutes or a little harder
+export function cardioAdvice(ex, history, plannedMin, effort = 'easy') {
+  const last = history && history.length ? history[history.length - 1] : null;
+  const e = EFFORTS[effortIndex(effort)];
+  const talk = `${e.name} pace: ${e.talk.toLowerCase()}.`;
+  if (!last?.min) return { min: plannedMin, text: `${plannedMin} minutes. ${talk}` };
+  if (last.min >= plannedMin && last.felt === 'easy') {
+    const more = Math.min(plannedMin + 5, ex.rr?.[1] || plannedMin + 5);
+    return { min: more, text: more > plannedMin ? `That felt easy last time, so try ${more} minutes. ${talk}` : `That felt easy last time, so go a little harder. ${talk}` };
+  }
+  return { min: Math.max(plannedMin, last.min), text: `${Math.max(plannedMin, last.min)} minutes. ${talk}` };
+}
 
 // Double progression: stay at a weight until you hit the top of the range on every set, then go up
 export function advice(ex, history, fmtW, rr = ex.rr, stop = '1 or 2') {

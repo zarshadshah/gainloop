@@ -1,8 +1,8 @@
 # Gainloop
 
-A phone-first web app for building muscle. You measure yourself with a soft tape, it sets targets from your frame, builds training around your equipment and the exercises you already do, and plans meals that follow your food rules and health conditions. Every exercise has illustrated how-to pictures with the kit you need, and you can get meal ideas from the food you have. It checks in every two weeks and adjusts, saying why each time.
+A phone-first web app for building muscle. You measure yourself with a soft tape, it sets targets from your frame, builds training around your equipment and the exercises you already do (cardio included), and plans meals that follow your food rules and health conditions. Every exercise has illustrated how-to pictures with the kit you need. Type the food you have and an AI suggests meals from only that food, sized to your plan. Log a day off plan and it spreads the difference over the next few days. It checks in every two weeks and adjusts, saying why each time.
 
-It's a Progressive Web App (PWA): a website that installs to your home screen, opens full screen and works offline. There's no build step and no server. Everything is plain HTML, CSS and JavaScript.
+It's a Progressive Web App (PWA): a website that installs to your home screen, opens full screen and works offline. There's no build step. Everything is plain HTML, CSS and JavaScript. The only server code is a small function on Cloudflare that talks to a free AI model for the AI features.
 
 ---
 
@@ -22,12 +22,14 @@ Most rows answer a gap found in recent reviews of Strongr Fastr, MeThreeSixty, Z
 | Plans change without explanation | Every change to calories or training is logged with the reason and the numbers behind it. |
 | Beginners don't know how to do the moves | Every exercise has illustrations of the start and end of the move, switching back and forth, plus the kit you need and three plain steps. Pictures for your sessions are kept on the phone, so they show at the gym without signal. |
 | Generated plans throw away what you already do | Tell it the exercises you do now (any name: "bench", "RDL", "pull-ups") and the plan keeps them, building the rest around them. Anything it can't fit comes with a reason. |
-| Meal plans assume a big shop | Tick the food you have and get meals made from it, sized to your calories, plus recipes you're one or two items short of. Use one for any day with a tap. |
+| Meal plans assume a big shop | Type the food you have and the AI suggests meals that use only that food (plus oil, salt and spices), sized to your plan and checked against your food rules before you see them. Or tick foods from a list for ideas made on the phone. Use one for any day with a tap. |
+| One day off plan derails the plan | Log a meal you skipped, swapped or added (the AI can estimate it). Gainloop spreads the difference over 3 days to 2 weeks, never more than 15% a day, protein unchanged, with optional extra cardio, and explains it. |
+| Cardio is missing or bolted on | 12 cardio options with pictures and calorie estimates. Cardio you do goes at the end of two sessions a week, kept easy while you build muscle. |
 | Health conditions are ignored | Diabetes (type 1, type 2, prediabetes), high blood pressure, heart and kidney conditions, coeliac disease, high cholesterol, asthma and joint pain change the meals, rep ranges and exercise choices, with safety notes. |
 
 ### Next
 
-- An optional AI coach you can chat with about your plan (needs a small server and an AI API key)
+- A chat with the AI coach about your plan
 - Accounts and sync, so your data follows you between devices
 - Reminders for weigh-ins and check-ins
 - Progress photos kept on your device
@@ -39,6 +41,8 @@ Most rows answer a gap found in recent reviews of Strongr Fastr, MeThreeSixty, Z
 
 Gainloop is hosted on Cloudflare Pages: every push to `main` goes live at [gainloop.pages.dev](https://gainloop.pages.dev) in a minute or two, and every other branch gets its own preview link. The free plan doesn't limit visitors and allows 500 deploys a month.
 
+The AI features run on Cloudflare too: `functions/api/ai.js` is a Pages Function that calls Workers AI through the binding in `wrangler.toml`, so there's no API key to manage. Workers AI's free allowance is 10,000 neurons a day. A meal idea uses roughly 100 neurons, an estimate or coach note far less, so that's usually 80 to 100 meal ideas a day. When it runs out, the AI features say so until it resets at midnight UTC, and everything else keeps working. The AI only works where the function runs: on Netlify or GitHub Pages the rest of the app works without it.
+
 The repository is also still connected to Netlify at [gainloop-app.netlify.app](https://gainloop-app.netlify.app). Netlify's free plan allows about 20 deploys a month, and when its credits run out the site goes offline until they reset.
 
 ### Cloudflare Pages (what Gainloop uses)
@@ -48,7 +52,7 @@ The repository is also still connected to Netlify at [gainloop-app.netlify.app](
 3. Pick the repository and press **Begin setup**. Set the production branch to `main` and the framework preset to **None**. Leave the build command and build output directory empty, because the site is the repository root.
 4. Press **Save and Deploy**. From then on every push to `main` goes live.
 
-Cloudflare reads `_headers` for the cache rules and serves `404.html` for addresses that aren't part of the app. It also redirects `/index.html` to `/`, which `sw.js` allows for.
+Cloudflare reads `_headers` for the cache rules and serves `404.html` for addresses that aren't part of the app. It also redirects `/index.html` to `/`, which `sw.js` allows for. The AI binding comes from `wrangler.toml`, so nothing needs setting up in the dashboard.
 
 ### Quickest: Netlify Drop
 
@@ -83,7 +87,8 @@ On iPhone the home-screen app keeps its own data, separate from Safari. Set up i
 
 ## Your data
 
-- Everything is saved in the browser on that device (`localStorage`), including any health details. Nothing is sent anywhere, and the meal ideas and exercise search run on the phone.
+- Everything is saved in the browser on that device (`localStorage`), including any health details. The exercise search and the tick-list meal ideas run on the phone.
+- The AI features send only what each one needs, and only when you tap: your food list, that meal's calorie and protein targets and your food rules for meal ideas; what you typed for an estimate; the numbers of your back-on-track plan for a coach's note. Health conditions aren't sent, only what they change about food (like a carb limit). No name, measurements or weight. Cloudflare says it doesn't use this to train AI models.
 - Clearing the site's data, or uninstalling the app, deletes it. Use **You → Download backup** (or **Copy backup**) now and then, and before you change phone.
 - Restore from **You → Restore** or from the welcome screen.
 - Saved data belongs to the web address it was saved on. When the app moves to a new address (for example from gainloop-app.netlify.app to gainloop.pages.dev), open the old address and use **You → Download backup** or **Copy backup**. Then use **Restore** on the new address and add the new address to your home screen.
@@ -116,6 +121,10 @@ In Codespaces, open the forwarded port 8080. Edit a file, save, refresh.
 | `js/meals.js` | Meal planner, diet and health filters, portion scaling and shopping list. |
 | `js/pantry.js` | "Cook with what you have": meal ideas from the foods you tick. |
 | `js/health.js` | Health conditions: what each one changes and its safety notes. |
+| `js/track.js` | The food log and back-on-track plans: daily targets, safe limits, extra cardio. |
+| `js/ai.js` | Talks to the AI helper and checks its answers: totals, food rules, foods you didn't list. |
+| `functions/api/ai.js` | The AI helper on Cloudflare: meal ideas, food estimates and coach notes from Workers AI. |
+| `wrangler.toml` | Cloudflare settings: the site folder and the Workers AI binding. |
 | `js/search.js` | Exercise search that understands gym names like "RDL" or "pull ups". |
 | `js/engine.js` | Joins it up: setup, check-ins and the example data. |
 | `js/store.js` | Saving, backups and the example profile. |
@@ -138,6 +147,7 @@ In Codespaces, open the forwarded port 8080. Edit a file, save, refresh.
 
 - **Add a meal:** copy an entry in `MEALS` in `js/data/foods.js`. `items` are `[ingredientId, grams]` pairs using ids from `INGREDIENTS`. The planner scales portions to your calories, so pick normal amounts.
 - **Add an ingredient:** add it to `INGREDIENTS` with per-100 g `kcal`, `p`, `c`, `f`, a `shop` group and the flags the diet rules check: `meat: 'chicken'` (or `'beef'`, `'lamb'`, `'pork'`), `fish`, `dairy`, `egg`, `gluten`, `nuts`, `soy`, `sesame`, `honey`, `alcohol`. A missing flag means a rule can't catch it, so be thorough.
+- **Add cardio:** copy a cardio entry at the end of `EXERCISES` (`m: 'cardio'`, `load: 'min'`, `rr` in minutes, `met` for easy, moderate and hard from the Compendium), then give it a guide and pictures like any exercise.
 - **Add an exercise:** copy an entry in `EXERCISES` in `js/data/exercises.js`. `m` is the muscle, `k` is `c` (compound) or `i` (isolation), `eq` lists the equipment it suits, `rr` is the rep range and `step` the weight jump in kg. Add `auto: false` if the planner should only use it for people who already do it. Then give it a guide in `js/data/guides.js` and pictures in `js/data/pictures.js` (copy two pictures into `img/ex/` named `<name>-1.webp` and `<name>-2.webp`, and a small one into `img/ex/t/<name>.webp`). Without pictures it still works, it just shows the steps.
 - **Change a health rule:** `healthRules()` in `js/health.js` decides what each condition changes, and `STRESS` lists the exercises left out for each sore joint. The How the numbers work screen in `js/app.js` explains them, so update both.
 - **Change the calorie rules:** `calorieDecision()` in `js/calc.js`. The same rules are explained on the How the numbers work screen in `js/app.js`, so update both.
@@ -187,6 +197,11 @@ Gainloop gives general fitness guidance, not medical advice. Anyone with a healt
 - [Cloudflare Pages: the _headers file](https://developers.cloudflare.com/pages/configuration/headers/)
 - [Cloudflare Pages: how pages, redirects and 404s are served](https://developers.cloudflare.com/pages/platform/serving-pages/)
 - [Cloudflare Pages limits](https://developers.cloudflare.com/pages/platform/limits/)
+- [Cloudflare Pages: Functions configuration with wrangler.toml](https://developers.cloudflare.com/pages/functions/wrangler-configuration/)
+- [Workers AI pricing and free allowance](https://developers.cloudflare.com/workers-ai/platform/pricing/)
+- [Workers AI: how your data is used](https://developers.cloudflare.com/workers-ai/platform/privacy/)
+- [OpenAI gpt-oss-120b on Workers AI](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)
+- [2024 Adult Compendium of Physical Activities](https://pacompendium.com/wp-content/uploads/2024/01/2024-adult-compendium_1_2024.pdf) (calories for cardio)
 - [Netlify: how credits work](https://docs.netlify.com/manage/accounts-and-billing/billing/billing-for-credit-based-plans/how-credits-work/)
 - [Netlify Drop quickstart](https://docs.netlify.com/start/quickstarts/netlify-drop-quickstart/)
 - [Netlify project visibility](https://docs.netlify.com/manage/security/secure-access-to-sites/project-visibility/)

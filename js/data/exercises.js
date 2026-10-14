@@ -18,7 +18,18 @@ export const MUSCLES = [
   { id: 'forearms', name: 'Forearms' },
 ];
 
-export const muscleName = (id) => (MUSCLES.find((m) => m.id === id) || { name: id }).name;
+// Cardio isn't a muscle: it has its own group, is logged in minutes and never counts toward weekly sets
+export const CARDIO = { id: 'cardio', name: 'Cardio' };
+export const muscleName = (id) => (id === CARDIO.id ? CARDIO.name : (MUSCLES.find((m) => m.id === id) || { name: id }).name);
+export const isCardio = (ex) => ex?.m === CARDIO.id;
+
+// How hard a cardio session is. The talk test is the easiest way to judge it without a heart rate monitor.
+export const EFFORTS = [
+  { id: 'easy', name: 'Easy', talk: 'You can chat in full sentences' },
+  { id: 'moderate', name: 'Moderate', talk: 'You can talk in short phrases' },
+  { id: 'hard', name: 'Hard', talk: 'Only a few words at a time' },
+];
+export const effortIndex = (id) => Math.max(0, EFFORTS.findIndex((e) => e.id === id));
 
 export const EXERCISES = [
   // Chest
@@ -129,7 +140,32 @@ export const EXERCISES = [
   { id: 'hip-abduction', name: 'Hip abduction machine', m: 'glutes', k: 'i', eq: ['gym'], load: 'kg', rr: [12, 20], step: 2.5, auto: false, cue: 'Push your knees apart and control the way back.' },
   { id: 'crunch', name: 'Crunch', m: 'abs', k: 'i', eq: ['gym', 'home', 'bw'], load: 'bw', rr: [12, 20], auto: false, cue: 'Curl your ribs toward your hips rather than pulling on your neck.' },
   { id: 'leg-raise', name: 'Lying leg raise', m: 'abs', k: 'i', eq: ['gym', 'home', 'bw'], load: 'bw', rr: [8, 15], auto: false, cue: 'Keep your lower back pressed into the floor the whole time.' },
+
+  // Cardio: logged in minutes (rr is the usual range of minutes). met: energy cost at easy, moderate and hard
+  // effort, from the 2024 Adult Compendium of Physical Activities. impact: how hard it is on knees and ankles.
+  // The planner adds cardio only when you say you do it, or for a back-on-track plan.
+  { id: 'brisk-walk', name: 'Brisk walk', m: 'cardio', k: 'c', eq: ['gym', 'home', 'bw'], load: 'min', rr: [20, 45], met: [3.8, 4.8, 7.0], impact: 'low', auto: false, cue: 'Walk fast enough that your breathing picks up. Hills make it harder without running.' },
+  { id: 'incline-walk', name: 'Incline treadmill walk', m: 'cardio', k: 'c', eq: ['gym'], load: 'min', rr: [15, 40], met: [5.0, 7.0, 8.8], impact: 'low', auto: false, cue: 'Hands off the rails if you can. Leaning on them takes most of the work away.' },
+  { id: 'treadmill-run', name: 'Treadmill run', m: 'cardio', k: 'c', eq: ['gym'], load: 'min', rr: [15, 40], met: [7.5, 9.3, 11.0], impact: 'high', auto: false, cue: 'Short, quick steps landing under your hips. Start with a few minutes of walking.' },
+  { id: 'run', name: 'Running', m: 'cardio', k: 'c', eq: ['gym', 'home', 'bw'], load: 'min', rr: [15, 45], met: [7.5, 9.3, 11.0], impact: 'high', auto: false, cue: 'Run at a pace you could talk at. New to it? Mix 1 minute running with 1 to 2 minutes walking.' },
+  { id: 'bike', name: 'Exercise bike', m: 'cardio', k: 'c', eq: ['gym'], load: 'min', rr: [15, 45], met: [4.0, 6.0, 10.8], impact: 'low', auto: false, cue: 'Knee slightly bent at the bottom of each pedal stroke. Use the resistance to set the effort.' },
+  { id: 'rower', name: 'Rowing machine', m: 'cardio', k: 'c', eq: ['gym'], load: 'min', rr: [10, 30], met: [5.0, 7.5, 11.0], impact: 'low', auto: false, cue: 'Legs, then body, then arms. Back the other way: arms, body, then knees.' },
+  { id: 'cross-trainer', name: 'Cross trainer', m: 'cardio', k: 'c', eq: ['gym'], load: 'min', rr: [15, 40], met: [4.0, 5.0, 7.0], impact: 'low', auto: false, cue: 'Stand tall and push and pull the handles in time with your legs.' },
+  { id: 'stair-climber', name: 'Stair climber', m: 'cardio', k: 'c', eq: ['gym'], load: 'min', rr: [10, 30], met: [7.0, 9.3, 11.0], impact: 'medium', auto: false, cue: 'Full steps through your whole foot. Hold the rails lightly, only for balance.' },
+  { id: 'skipping', name: 'Skipping rope', m: 'cardio', k: 'c', eq: ['gym', 'home', 'bw'], load: 'min', rr: [5, 20], met: [8.3, 11.8, 12.3], impact: 'high', auto: false, cue: 'Turn the rope with your wrists and jump just high enough to clear it.' },
+  { id: 'jumping-jacks', name: 'Jumping jacks', m: 'cardio', k: 'c', eq: ['gym', 'home', 'bw'], load: 'min', rr: [5, 15], met: [5.0, 7.5, 8.0], impact: 'high', auto: false, cue: 'Land softly on the balls of your feet and keep a steady rhythm.' },
+  { id: 'burpees', name: 'Burpees', m: 'cardio', k: 'c', eq: ['gym', 'home', 'bw'], load: 'min', rr: [5, 15], met: [5.0, 7.5, 8.0], impact: 'high', auto: false, cue: 'Step back instead of jumping to make it easier. Work in rounds with short rests.' },
+  { id: 'mountain-climbers', name: 'Mountain climbers', m: 'cardio', k: 'c', eq: ['gym', 'home', 'bw'], load: 'min', rr: [5, 15], met: [5.0, 7.5, 8.0], impact: 'medium', auto: false, cue: 'Hips level with your shoulders, core tight, knees driving toward your chest.' },
 ];
+
+export const cardioExercises = () => allExercises().filter(isCardio);
+
+// Energy burned on top of resting, in kcal: (MET - 1) x kg x hours. Your calorie target already covers resting.
+export function cardioKcal(ex, minutes, kg, effort = 'moderate') {
+  if (!isCardio(ex) || !minutes || !kg) return 0;
+  const met = (ex.met || [4, 6, 8])[effortIndex(effort)];
+  return Math.max(0, Math.round(((met - 1) * kg * minutes) / 60));
+}
 
 // Exercises you add yourself live in your saved data; the app registers them here so every lookup finds them
 let CUSTOM = [];
