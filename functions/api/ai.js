@@ -241,8 +241,28 @@ const SCHEMAS = {
   },
 };
 
+// Temporary: time other models on the same meal request, to pick the best balance of speed and quality
+const BENCH = ['@cf/google/gemma-4-26b-a4b-it', '@cf/meta/llama-4-scout-17b-16e-instruct', '@cf/mistralai/mistral-small-3.1-24b-instruct', '@cf/qwen/qwen3-30b-a3b-fp8', '@cf/zai-org/glm-4.7-flash', '@cf/openai/gpt-oss-20b', '@cf/meta/llama-3.3-70b-instruct-fp8-fast', '@cf/openai/gpt-oss-120b'];
+async function bench(env, d) {
+  if (!BENCH.includes(d.model)) return { status: 400, body: { error: 'model' } };
+  const p = mealsPrompt(d);
+  const t0 = Date.now();
+  try {
+    const input = d.shape === 'responses'
+      ? { instructions: p.system, input: p.user, reasoning: { effort: d.effort || 'low' } }
+      : { messages: [{ role: 'system', content: p.system }, { role: 'user', content: p.user }], max_tokens: 2500, temperature: 0.4 };
+    const res = await env.AI.run(d.model, input);
+    const text = textOf(res);
+    const data = parseJSON(text);
+    return { status: 200, body: { model: d.model, ms: Date.now() - t0, usage: res?.usage || null, ok: !!data, meals: (data?.meals || []).map(tidyMeal).filter(Boolean), raw: data ? undefined : clean(text, 800) } };
+  } catch (err) {
+    return { status: 200, body: { model: d.model, ms: Date.now() - t0, error: clean(err?.message || err, 300) } };
+  }
+}
+
 export async function runTask(env, d) {
   const task = d?.task;
+  if (task === 'bench') return bench(env, d);
   if (task === 'meals') {
     if (!clean(d.foods)) return { status: 400, body: { error: 'Tell me what food you have first.' } };
     const { data, model } = await ask(env, mealsPrompt(d), SCHEMAS.meals);
