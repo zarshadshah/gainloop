@@ -208,7 +208,7 @@ const isStandalone = () => window.matchMedia?.('(display-mode: standalone)').mat
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 function installHTML(compact = false) {
-  if (PREVIEW) return `<p class="muted">This is a preview inside Claude. Put the files on Netlify, open your link on your phone, then add it to your home screen.</p>`;
+  if (PREVIEW) return `<p class="muted">This is a preview inside Claude. Put the files on a web host (the README shows how), open your link on your phone, then add it to your home screen.</p>`;
   if (isStandalone()) return `<p class="muted">${I.check} Installed on this device.</p>`;
   if (ui.installEvent) return `<button class="btn${compact ? ' btn-small' : ''}" data-act="install">Install Gainloop</button>`;
   if (isIOS()) return `<p class="muted">In Safari, tap ${I.share} Share, then <strong>Add to Home Screen</strong>. The home-screen app keeps its own data, separate from Safari, so set up there, or move your data across with a backup and <strong>Restore</strong>.</p>`;

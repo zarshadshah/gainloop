@@ -1,11 +1,11 @@
 // Gainloop service worker.
 // Network first: when you're online you always get the latest files you deployed,
 // and a copy is kept so the app still opens offline.
-const CACHE = 'gainloop-v3';
+const CACHE = 'gainloop-v4';
 
+// The page itself is kept as './' only: some hosts (Cloudflare Pages) send /index.html on to /
 const SHELL = [
   './',
-  './index.html',
   './manifest.webmanifest',
   './css/app.css',
   './js/app.js',
@@ -60,6 +60,13 @@ const withTimeout = (promise, ms) =>
     promise.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
   });
 
+// Browsers won't open a page from a saved copy that arrived through a redirect,
+// so a page that did gets a fresh, redirect-free copy
+async function forPage(response) {
+  if (!response || !response.redirected) return response;
+  return new Response(await response.blob(), { status: response.status, statusText: response.statusText, headers: response.headers });
+}
+
 async function networkFirst(request) {
   const cache = await caches.open(CACHE);
   try {
@@ -67,11 +74,12 @@ async function networkFirst(request) {
     if (response && response.ok && response.type === 'basic') cache.put(request, response.clone());
     return response;
   } catch {
+    const isPage = request.mode === 'navigate';
     const hit = await cache.match(request, { ignoreSearch: true });
-    if (hit) return hit;
-    if (request.mode === 'navigate') {
-      const shell = (await cache.match('./index.html')) || (await cache.match('./'));
-      if (shell) return shell;
+    if (hit) return isPage ? forPage(hit) : hit;
+    if (isPage) {
+      const shell = await cache.match('./');
+      if (shell) return forPage(shell);
     }
     return Response.error();
   }

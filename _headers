@@ -1,5 +1,5 @@
-# Netlify reads this file. The service worker and manifest must never be cached,
-# so phones always pick up your latest version.
+# Cloudflare Pages and Netlify both read this file. The service worker and manifest
+# must never be cached, so phones always pick up your latest version.
 /sw.js
   Cache-Control: no-cache
 /manifest.webmanifest
