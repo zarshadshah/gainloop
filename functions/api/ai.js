@@ -145,7 +145,7 @@ export function parseJSON(text) {
   }
 }
 
-async function ask(env, { system, user, maxTokens }, schema) {
+async function ask(env, { system, user, maxTokens }, schema, report = null) {
   const attempts = [
     { model: MODELS.main, input: { instructions: system, input: user, reasoning: { effort: 'low' } } },
     { model: MODELS.main, input: { messages: [{ role: 'system', content: system }, { role: 'user', content: user }], max_tokens: maxTokens, temperature: 0.4 } },
@@ -153,13 +153,17 @@ async function ask(env, { system, user, maxTokens }, schema) {
   ];
   let lastError = 'no answer';
   for (const a of attempts) {
+    const t0 = Date.now();
     try {
       const res = await env.AI.run(a.model, a.input);
-      const data = parseJSON(textOf(res));
+      const text = textOf(res);
+      const data = parseJSON(text);
+      report?.push({ model: a.model, shape: a.input.messages ? 'messages' : 'responses', ms: Date.now() - t0, ok: !!data, keys: res && typeof res === 'object' ? Object.keys(res).slice(0, 8) : typeof res, sample: clean(text, 300) });
       if (data) return { data, model: a.model };
       lastError = 'unreadable answer';
     } catch (err) {
       lastError = clean(err?.message || err, 160);
+      report?.push({ model: a.model, shape: a.input.messages ? 'messages' : 'responses', ms: Date.now() - t0, ok: false, error: lastError });
       // the daily free allowance is used up: every model will say the same
       if (/limit|quota|capacity|neuron|429/i.test(lastError)) break;
     }
@@ -282,18 +286,20 @@ export async function onRequestPost({ request, env }) {
   }
 }
 
-// A quick health check. ?check=gl-setup also runs one small real request, to confirm the AI answers.
+// A quick health check. ?check=gl-quick runs one small real request and reports each attempt (for setting up).
 export async function onRequestGet({ env, request }) {
   const base = { ok: true, ai: !!env.AI, model: MODELS.main };
-  if (new URL(request.url).searchParams.get('check') !== 'gl-setup' || !env.AI) return json(base);
+  const check = new URL(request.url).searchParams.get('check');
+  if (!env.AI || !['gl-quick', 'gl-meal'].includes(check)) return json(base);
   const started = Date.now();
+  const report = [];
   try {
-    const { status, body } = await runTask(env, {
-      task: 'meals', foods: 'chicken thighs, basmati rice, peppers, onions, Greek yogurt', slot: 'dinner', count: 1,
-      targets: { dinner: { kcal: 700, p: 45, c: 75, f: 20 } }, rules: { halal: true },
-    });
-    return json({ ...base, status, ms: Date.now() - started, body });
+    const p = check === 'gl-meal'
+      ? mealsPrompt({ foods: 'chicken thighs, basmati rice, peppers, onions, Greek yogurt', slot: 'dinner', count: 1, targets: { dinner: { kcal: 700, p: 45, c: 75, f: 20 } }, rules: { halal: true } })
+      : estimatePrompt({ text: 'a banana and a glass of semi-skimmed milk' });
+    const { data, model } = await ask(env, p, check === 'gl-meal' ? SCHEMAS.meals : SCHEMAS.estimate, report);
+    return json({ ...base, ms: Date.now() - started, used: model, report, data });
   } catch (err) {
-    return json({ ...base, error: clean(err?.message || err, 200), ms: Date.now() - started });
+    return json({ ...base, ms: Date.now() - started, report, error: clean(err?.message || err, 200) });
   }
 }
