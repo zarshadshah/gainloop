@@ -297,8 +297,13 @@ export async function onRequestGet({ env, request }) {
     const p = check === 'gl-meal'
       ? mealsPrompt({ foods: 'chicken thighs, basmati rice, peppers, onions, Greek yogurt', slot: 'dinner', count: 1, targets: { dinner: { kcal: 700, p: 45, c: 75, f: 20 } }, rules: { halal: true } })
       : estimatePrompt({ text: 'a banana and a glass of semi-skimmed milk' });
-    const { data, model } = await ask(env, p, check === 'gl-meal' ? SCHEMAS.meals : SCHEMAS.estimate, report);
-    return json({ ...base, ms: Date.now() - started, used: model, report, data });
+    const wait = Math.min(25, Number(new URL(request.url).searchParams.get('wait')) || 25) * 1000;
+    const out = await Promise.race([
+      ask(env, p, check === 'gl-meal' ? SCHEMAS.meals : SCHEMAS.estimate, report),
+      new Promise((resolve) => { setTimeout(() => resolve({ timeout: true }), wait); }),
+    ]);
+    if (out.timeout) return json({ ...base, ms: Date.now() - started, timeout: true, report });
+    return json({ ...base, ms: Date.now() - started, used: out.model, report, data: out.data });
   } catch (err) {
     return json({ ...base, ms: Date.now() - started, report, error: clean(err?.message || err, 200) });
   }
