@@ -108,5 +108,7 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  // the AI helper always goes to the network, and is never kept
+  if (url.pathname.includes('/api/')) return;
   event.respondWith(networkFirst(request));
 });
