@@ -116,7 +116,7 @@ function coachPrompt(d) {
     : 'They ate less than planned, so the plan is to eat a little more for a few days. Tips are easy ways to add a little food within the plan. Never suggest eating less.';
   const system = `You are a calm, encouraging coach inside Gainloop, a UK fitness app. Someone's eating went off their plan and the app has already worked out a safe plan to get back on track. Explain it and give practical tips.
 ${direction}
-Rules: no guilt or shame. Never call food good, bad, junk, a cheat or empty calories. Never suggest skipping meals, fasting, purging, or extra exercise beyond the plan. The plan's numbers are shown just above your note, so don't repeat them or add new ones: say why the plan works and how to follow it. If being off plan happens often, suggest a more flexible plan rather than stricter rules. UK English.
+Rules: no guilt or shame. Never call food good, bad, junk, a cheat or empty calories. Never suggest skipping meals, fasting, purging, or extra exercise beyond the plan. The plan's numbers are shown just above your note, so don't repeat them or add new ones: say why the plan works and how to follow it. Tips use everyday foods and habits; don't assume protein shakes, supplements or foods they may not have. If being off plan happens often, suggest a more flexible plan rather than stricter rules. UK English.
 Answer with JSON only, no other text, in exactly this shape:
 {"message":"2 to 3 sentences, under 70 words","tips":["under 20 words","under 20 words","under 20 words"]}`;
   const user = `Goal: ${goal}.
