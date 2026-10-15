@@ -45,12 +45,10 @@ function rulesText(r = {}) {
   return lines.length ? lines.join('\n') : 'No special food rules.';
 }
 
+// Calories and protein only: asked to hit carbs and fat as well, the model piles in extra foods to make them fit
 function targetText(t) {
   if (!t) return '';
-  const parts = [`about ${Math.round(t.kcal)} kcal`, `at least ${Math.round(t.p)} g protein`];
-  if (t.c) parts.push(`about ${Math.round(t.c)} g carbs`);
-  if (t.f) parts.push(`about ${Math.round(t.f)} g fat`);
-  return parts.join(', ');
+  return `about ${Math.round(num(t.kcal, 100, 3000) || 0)} kcal, at least ${Math.round(num(t.p, 0, 200) || 0)} g protein`;
 }
 
 const MEAL_SHAPE = `{"meals":[{"name":"short meal name","slot":"breakfast|lunch|dinner|snack","minutes":20,
@@ -68,8 +66,8 @@ function mealsPrompt(d) {
 Hard rules:
 1. Use ONLY the foods the person lists, plus these basics that everyone has: water, cooking oil, salt, black pepper, dried herbs, spices, garlic, lemon juice, vinegar, a vegetable stock cube. Never add any other ingredient. If a good meal needs something else, skip that meal. If you break this rule anyway, name the extra food in "notInList".
 2. Follow every food rule below exactly.
-3. Make one proper dish, with sides if you like, that people would really cook. Use every ingredient in the steps. Don't add foods just to hit the numbers; you needn't use everything listed.
-4. Size each meal to its target by choosing gram amounts. Hit the protein target where the foods allow.
+3. Make one proper dish, with sides if you like, that people would really cook. Pick foods from the list that go together: most meals use 3 to 6 of them, and you needn't use everything. Don't stir sweet foods like fruit, oats or honey into savoury dishes (a separate pudding is fine). A breakfast should be a breakfast dish where the foods allow. Use every ingredient in the steps, and don't add foods just to hit the numbers.
+4. Size each meal to its calorie target by choosing gram amounts, and reach the protein target where the foods allow.
 5. Grams are the weight as bought: raw meat and fish, DRY rice, pasta, noodles, oats and lentils, raw potatoes. Give kcal, protein, carbs and fat for that weight, from typical UK food labels. For scale, per 100 g as bought: dry rice 355 kcal, dry pasta 350, oats 375, dried red lentils 330, raw chicken breast 110, raw chicken thigh fillets 140, eggs 140 (one egg is about 50 g), oil 900. A usual portion of dry rice or pasta is 60 to 100 g.
 6. List only what you weigh. Leave water, salt and pepper out of the list and mention them in the steps.
 7. Steps: 2 to 5 short steps in UK English, metric units, oven in °C.
@@ -113,7 +111,7 @@ function coachPrompt(d) {
     : 'They ate less than planned, so the plan is to eat a little more for a few days. Tips are easy ways to add a little food within the plan. Never suggest eating less.';
   const system = `You are a calm, encouraging coach inside Gainloop, a UK fitness app. Someone's eating went off their plan and the app has already worked out a safe plan to get back on track. Explain it and give practical tips.
 ${direction}
-Rules: no guilt or shame. Never call food good, bad, junk, a cheat or empty calories. Never suggest skipping meals, fasting, purging, or extra exercise beyond the plan. Don't change any of the numbers or add new ones. If being off plan happens often, suggest a more flexible plan rather than stricter rules. UK English.
+Rules: no guilt or shame. Never call food good, bad, junk, a cheat or empty calories. Never suggest skipping meals, fasting, purging, or extra exercise beyond the plan. The plan's numbers are shown just above your note, so don't repeat them or add new ones: say why the plan works and how to follow it. If being off plan happens often, suggest a more flexible plan rather than stricter rules. UK English.
 Answer with JSON only, no other text, in exactly this shape:
 {"message":"2 to 3 sentences, under 70 words","tips":["under 20 words","under 20 words","under 20 words"]}`;
   const user = `Goal: ${goal}.

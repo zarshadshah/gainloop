@@ -102,9 +102,13 @@ function prep(text) {
     .replace(/\bcooking\s+spray\b|\boil\s+spray\b/g, ' oil ')
     .replace(/\b(vegetable|chicken|beef)\s+stock(\s+cubes?|\s+pots?)?\b/g, ' stock ')
     .replace(/\bstock\s+cubes?\b/g, ' stock ')
-    .replace(/\b(soya|soy|oat|almond|coconut|rice|cashew)\s+(milk|drink|yogh?urt)\b/g, ' $1 plantmilk ')
+    .replace(/\b(soya|soy|oat|almond|coconut|rice|cashew)\s+(milk|drink|yogh?urt|cream)\b/g, ' $1 plantmilk ')
+    .replace(/\bbutter\s+beans?\b/g, ' butterbean ')
     .replace(/\b(peanut|almond|cashew)\s+butter\b/g, ' $1 nutbutter ')
-    .replace(/\bgluten[\s-]free\b/g, ' glutenfree ');
+    .replace(/\bgluten[\s-]free\b/g, ' glutenfree ')
+    // 'sweet' on its own counts as sugar, but not in these
+    .replace(/\bsweet\s+potato(es)?\b/g, ' sweetpotato ')
+    .replace(/\bsweet\s+(peppers?|corn|paprika|chilli\s+flakes)\b/g, ' $1 ');
 }
 
 export function words(text) {
@@ -239,6 +243,9 @@ export function aiBreaks(names, diet, r) {
 
 // ---------- Turning an AI meal into a Gainloop meal ----------
 
+// A step as checked against your food rules: 'no added sugar' or 'instead of butter' don't count as using it
+const stepText = (s) => String(s || '').replace(/\b(no|not|without|instead of|in place of|free from|avoid|avoiding|skip|skipping|leave out)\s+(any\s+|added\s+|the\s+)?[a-z]+(\s+(or|and)\s+[a-z]+)?/gi, ' ');
+
 // Calories that don't add up to the protein, carbs and fat are worked out again from them
 function fixKcal(i) {
   const fromMacros = i.p * 4 + i.c * 4 + i.f * 9;
@@ -252,9 +259,22 @@ function hash(s) {
   return h.toString(36);
 }
 
+// Foods the steps never mention were usually added just to make the numbers fit, so they're left out.
+// Only when the steps are full enough to tell, and never most of the meal.
+export function dropUnused(ing, steps) {
+  const said = words((steps || []).join(' '));
+  const main = ing.filter((i) => !isBasic(i.food));
+  const used = new Set(main.filter((i) => mainWords(i.food).some((w) => said.has(w))));
+  if (used.size === main.length || used.size < 2 || used.size / main.length < 0.6) return ing;
+  const kcalOf = (list) => list.reduce((t, i) => t + (i.kcal || 0), 0);
+  const kept = ing.filter((i) => isBasic(i.food) || used.has(i));
+  return kcalOf(kept) < kcalOf(ing) * 0.6 ? ing : kept;
+}
+
 // target: the calories and protein for this meal. ctx: { diet, rules, have (text) }
 export function aiMeal(raw, slot, target, ctx) {
-  const ing = (raw.ingredients || []).map((i) => checkLine({ food: i.food, g: i.grams || 0, kcal: fixKcal(i), p: i.p || 0, c: i.c || 0, f: i.f || 0 }));
+  const all = (raw.ingredients || []).map((i) => checkLine({ food: i.food, g: i.grams || 0, kcal: fixKcal(i), p: i.p || 0, c: i.c || 0, f: i.f || 0 }));
+  const ing = dropUnused(all, raw.steps);
   const tot = ing.reduce((t, i) => {
     t.kcal += i.kcal; t.p += i.p; t.c += i.c; t.f += i.f;
     return t;
@@ -267,7 +287,8 @@ export function aiMeal(raw, slot, target, ctx) {
     .filter((i) => i.g > 0 || /salt|pepper|spice|herb/i.test(i.food))
     .map((i) => ({ food: i.food, g: roundTo(i.g * scale, i.g * scale < 30 ? 1 : 5), ...(isBasic(i.food) ? { basic: true } : {}) }));
   const m = roundMacros({ kcal: tot.kcal * scale, p: tot.p * scale, c: tot.c * scale, f: tot.f * scale });
-  const names = [raw.name, ...ing.map((i) => i.food)];
+  // every food named anywhere, including ones the steps add ('a splash of soy sauce') or that were left out above
+  const names = [raw.name, ...all.map((i) => i.food), ...(raw.steps || []).map(stepText)];
   const check = aiBreaks(names, ctx.diet, ctx.rules);
   const extras = [...new Set([...(raw.notInList || []), ...notInHave(ing, ctx.have)])];
   return {
