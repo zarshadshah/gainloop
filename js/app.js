@@ -1703,8 +1703,15 @@ function aiResultsHTML() {
   if (!res?.meals) return '';
   const fit = res.meals.filter((m) => !m.extras?.length);
   const extra = res.meals.filter((m) => m.extras?.length);
-  return `${res.left ? `<p class="fine">Left out ${plural(res.left, 'idea')} that didn’t fit your food rules.</p>` : ''}
-    ${fit.length ? `<div class="ideas">${fit.map(aiIdeaCard).join('')}</div>` : `<p class="empty">The AI couldn’t make a full meal from just those foods. Add a protein food (like eggs, chicken, beans or yogurt) and a carb (like rice, bread or potatoes).</p>`}
+  const left = [
+    res.left ? `${plural(res.left, 'idea')} that didn’t fit your food rules` : '',
+    res.odd ? `${plural(res.odd, 'idea')} that mixed foods that don’t go together` : '',
+  ].filter(Boolean);
+  const empty = left.length
+    ? 'None of these ideas passed the app’s checks. Try “Get different ideas”, or add another food.'
+    : 'The AI couldn’t make a full meal from just those foods. Add a protein food (like eggs, chicken, beans or yogurt) and a carb (like rice, bread or potatoes).';
+  return `${left.length ? `<p class="fine">Left out ${andList(left)}.</p>` : ''}
+    ${fit.length ? `<div class="ideas">${fit.map(aiIdeaCard).join('')}</div>` : `<p class="empty">${empty}</p>`}
     ${extra.length ? `<details class="short-list"><summary><span class="row-title">Ideas that need one more food (${extra.length})</span><span class="fine">They use something you didn’t list</span></summary><div class="ideas">${extra.map(aiIdeaCard).join('')}</div></details>` : ''}
     <p class="fine ai-foot">Ideas and amounts are AI estimates: check labels if you count closely. <button class="btn-link" data-act="ai-again">Get different ideas</button></p>`;
 }
@@ -1727,7 +1734,7 @@ async function runAIMeals(foods, slot, again = false) {
   const r = rules();
   const reqs = aiRequests(slot);
   const before = again ? (S.pantry.ai?.meals || []).map((m) => m.name).join(', ') : '';
-  S.pantry.ai = { text: foods, slot, at: today(), meals: [], left: 0 };
+  S.pantry.ai = { text: foods, slot, at: today(), meals: [], left: 0, odd: 0 };
   ui.aiBusy = true;
   ui.aiError = '';
   updateAIResults();
@@ -1740,6 +1747,7 @@ async function runAIMeals(foods, slot, again = false) {
         const m = aiMeal(raw, s, targets[s], { diet, rules: r, have: foods });
         if (!m) continue;
         if (m.breaks.length) { S.pantry.ai.left += 1; continue; }
+        if (m.odd) { S.pantry.ai.odd += 1; continue; }
         if (S.pantry.ai.meals.some((x) => x.id === m.id || x.name.toLowerCase() === m.name.toLowerCase())) continue;
         S.pantry.ai.meals.push(m);
       }
@@ -2464,6 +2472,7 @@ function useMeal(meal, di, slot, index) {
     const keep = { ...meal };
     delete keep.extras;
     delete keep.breaks;
+    delete keep.odd;
     S.customMeals.push(keep);
   }
   const targets = targetsFor(S, weekDate(S, di));

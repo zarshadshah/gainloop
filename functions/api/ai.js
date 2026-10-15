@@ -55,6 +55,11 @@ const MEAL_SHAPE = `{"meals":[{"name":"short meal name","slot":"breakfast|lunch|
 "ingredients":[{"food":"chicken thigh fillets, raw","grams":170,"kcal":238,"protein":32,"carbs":0,"fat":12}],
 "steps":["short step","short step"],"notInList":[]}]}`;
 
+const SLOT_HINT = {
+  breakfast: 'It’s breakfast: make a usual breakfast dish if the foods allow, like porridge, eggs on toast, an omelette, or yogurt with fruit and oats.',
+  snack: 'It’s a snack: something small and simple, like yogurt with fruit, boiled eggs, or toast with a topping.',
+};
+
 function mealsPrompt(d) {
   const slot = SLOTS.includes(d.slot) ? d.slot : 'any';
   const count = num(d.count, 1, 4) || 3;
@@ -66,7 +71,7 @@ function mealsPrompt(d) {
 Hard rules:
 1. Use ONLY the foods the person lists, plus these basics that everyone has: water, cooking oil, salt, black pepper, dried herbs, spices, garlic, lemon juice, vinegar, a vegetable stock cube. Never add any other ingredient. If a good meal needs something else, skip that meal. If you break this rule anyway, name the extra food in "notInList".
 2. Follow every food rule below exactly.
-3. Make one proper dish, with sides if you like, that people would really cook. Pick foods from the list that go together: most meals use 3 to 6 of them, and you needn't use everything. Don't stir sweet foods like fruit, oats or honey into savoury dishes (a separate pudding is fine). A breakfast should be a breakfast dish where the foods allow. Use every ingredient in the steps, and don't add foods just to hit the numbers.
+3. Make one proper dish, with sides if you like, that people would really cook. Pick foods from the list that go together: most meals use 3 to 6 of them, and you needn't use everything. Use every ingredient in the steps, and don't add foods just to hit the numbers. Good: chicken and pepper rice with a garlic yogurt sauce; porridge made with milk and topped with banana, with scrambled eggs on the side. Bad: oats, milk or banana stirred into a chicken dish.
 4. Size each meal to its calorie target by choosing gram amounts, and reach the protein target where the foods allow.
 5. Grams are the weight as bought: raw meat and fish, DRY rice, pasta, noodles, oats and lentils, raw potatoes. Give kcal, protein, carbs and fat for that weight, from typical UK food labels. For scale, per 100 g as bought: dry rice 355 kcal, dry pasta 350, oats 375, dried red lentils 330, raw chicken breast 110, raw chicken thigh fillets 140, eggs 140 (one egg is about 50 g), oil 900. A usual portion of dry rice or pasta is 60 to 100 g.
 6. List only what you weigh. Leave water, salt and pepper out of the list and mention them in the steps.
@@ -76,7 +81,7 @@ ${MEAL_SHAPE}`;
   const style = clean(d.style, 100);
   const user = `Foods I have: ${clean(d.foods, 600)}
 Give me ${count} different meal idea${count > 1 ? 's' : ''}${slot === 'any' ? ' across these meals' : ` for ${slot}`}:
-${wanted}${style ? `\nMake it: ${style}` : ''}${d.avoidNames ? `\nDon't repeat these: ${clean(d.avoidNames, 200)}.` : ''}
+${wanted}${SLOT_HINT[slot] ? `\n${SLOT_HINT[slot]}` : ''}${style ? `\nMake it: ${style}` : ''}${d.avoidNames ? `\nDon't repeat these: ${clean(d.avoidNames, 200)}.` : ''}
 Food rules:
 ${rulesText(d.rules)}`;
   return { system, user, maxTokens: 3000 };

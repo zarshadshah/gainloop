@@ -243,6 +243,18 @@ export function aiBreaks(names, diet, r) {
 
 // ---------- Turning an AI meal into a Gainloop meal ----------
 
+// Sweet breakfast foods stirred into a meat or fish dish ('combine the rice, chicken, oats and milk'): the AI
+// does this to make the numbers fit. Served on the side is fine.
+const SWEET = new Set(['oat', 'banana', 'granola', 'muesli', 'cereal', 'chocolate']);
+const ASIDE = /\b(side|alongside|separately|separate|pudding|dessert|afterwards|after|later)\b/i;
+
+export function oddMix(ing, steps, flags) {
+  if (!flags.has('meat') && !flags.has('fish')) return false;
+  const sweet = new Set(ing.flatMap((i) => mainWords(i.food)).filter((w) => SWEET.has(w)));
+  if (!sweet.size) return false;
+  return (steps || []).some((s) => !ASIDE.test(s) && [...words(s)].some((w) => sweet.has(w)));
+}
+
 // A step as checked against your food rules: 'no added sugar' or 'instead of butter' don't count as using it
 const stepText = (s) => String(s || '').replace(/\b(no|not|without|instead of|in place of|free from|avoid|avoiding|skip|skipping|leave out)\s+(any\s+|added\s+|the\s+)?[a-z]+(\s+(or|and)\s+[a-z]+)?/gi, ' ');
 
@@ -305,6 +317,7 @@ export function aiMeal(raw, slot, target, ctx) {
     steps: raw.steps || [],
     extras,
     breaks: check.reasons,
+    odd: oddMix(ing, raw.steps, check.flags),
   };
 }
 
