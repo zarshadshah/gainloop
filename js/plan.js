@@ -34,6 +34,32 @@ const VERTICAL_PULLS = new Set(['lat-pulldown', 'pull-up']);
 // Harder bodyweight versions: reached through progression, not handed to beginners on day one
 const PROGRESSIONS = new Set(EXERCISES.filter((e) => e.next).map((e) => e.next));
 
+// Every session has at most 6 exercises, cardio included, and an exercise at most 5 sets
+export const MAX_EXERCISES = 6;
+export const MAX_SETS = 5;
+// Bumped when the way plans are built changes, so saved plans are rebuilt once
+export const PROGRAM_VERSION = 2;
+
+// When sessions are full, places in the week go out in this order (your priorities always first).
+// Glutes and abs come last because squats, lunges, deadlifts and presses already work them hard.
+const KEEP = ['quads', 'chest', 'back', 'hamstrings', 'shoulders', 'triceps', 'biceps', 'calves', 'glutes', 'abs', 'forearms'];
+const MAJOR = new Set(['quads', 'chest', 'back', 'hamstrings', 'shoulders']);
+const BIG = new Set(['quads', 'chest', 'back']);
+const ARMS = new Set(['triceps', 'biceps']);
+// (muscle, which place it is for that muscle, is it a priority)
+const TIERS = [
+  (m, k, p) => p && k === 1,
+  (m, k) => MAJOR.has(m) && k === 1,
+  (m, k, p) => p && k === 2,
+  (m, k) => BIG.has(m) && k === 2,
+  (m, k) => ARMS.has(m) && k === 1,
+  (m, k) => MAJOR.has(m) && k === 2,
+  (m, k) => m === 'calves' && k === 1,
+  (m, k) => k === 1,
+  (m, k) => k === 2,
+  () => true,
+];
+
 export const setsPerSession = (minutes) => clamp(Math.round((minutes - 8) / 2.6), 10, 32);
 export const estimateMinutes = (sets) => Math.round(sets * 2.6 + 8);
 
@@ -179,27 +205,91 @@ export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
   const cap = setsPerSession(profile.minutes);
   const pri = new Set(priorities.map((p) => p.muscle));
   const priOrder = priorities.map((p) => p.muscle);
-  const sessions = split.sessions.map(([id, name, type], idx) => ({ id, name, type, idx, muscles: TYPE_MUSCLES[type], alloc: {}, load: 0 }));
+  const sessions = split.sessions.map(([id, name, type], idx) => ({ id, name, type, idx, muscles: TYPE_MUSCLES[type], alloc: {}, double: {}, load: 0 }));
+  const placed = new Set();
 
-  // 1. Share each muscle's sets across the sessions that train it, topping up the lightest session first
-  const order = MUSCLES.map((m) => m.id).filter((m) => weekly[m] > 0).sort((a, b) => weekly[b] - weekly[a] || ORDER.indexOf(a) - ORDER.indexOf(b));
-  for (const m of order) {
-    const elig = sessions.filter((s) => s.muscles.includes(m));
-    if (!elig.length) continue;
-    const T = weekly[m];
-    const k = Math.max(1, Math.min(elig.length, Math.floor(T / 2)));
-    const chosen = [...elig].sort((a, b) => a.load - b.load || a.idx - b.idx).slice(0, k);
-    for (const s of chosen) { s.alloc[m] = 2; s.load += 2; }
-    let left = T - 2 * k;
-    while (left > 0) {
-      chosen.sort((a, b) => a.load - b.load || a.idx - b.idx);
-      chosen[0].alloc[m] += 1;
-      chosen[0].load += 1;
-      left -= 1;
+  // 0. Cardio you already do goes in first, at most one finisher a session, so the lifting fits around it
+  const fin = finishFor(profile);
+  const cardioIn = sessions.map(() => null);
+  const cardioFull = new Set();
+  [...mine].map((id) => exerciseById(id)).filter((ex) => isCardio(ex) && (ex.custom || eligible(ex, profile))).forEach((own, j) => {
+    // a cardio swapped for another one (rower for the bike, say) takes its place
+    const to = swaps?.[own.id] ? exerciseById(swaps[own.id]) : null;
+    const ex = to && isCardio(to) && (to.custom || eligible(to, profile)) ? to : own;
+    const want = spread(sessions.length, j);
+    const order = [...want, ...sessions.map((s) => s.idx).filter((i) => !want.includes(i))];
+    let n = 0;
+    for (const i of order) {
+      if (n >= want.length) break;
+      if (cardioIn[i]) continue;
+      cardioIn[i] = { ex: ex.id, m: 'cardio', cardio: true, min: fin.min, effort: fin.effort, ...(ex === own ? { mine: true } : {}) };
+      n += 1;
+    }
+    if (n) placed.add(own.id);
+    else cardioFull.add(own.id);
+  });
+
+  // 1. Places in the week. A muscle takes one exercise of up to 5 sets in a session, and a session holds
+  //    6 exercises. Places go out in order of importance, each to the session with the most room left.
+  const room = sessions.map((s) => MAX_EXERCISES - (cardioIn[s.idx] ? 1 : 0));
+  const importance = (m) => (pri.has(m) ? priOrder.indexOf(m) - 100 : KEEP.indexOf(m));
+  const byImportance = MUSCLES.map((m) => m.id).filter((m) => weekly[m] > 0).sort((a, b) => importance(a) - importance(b));
+  const want = {};
+  const placesOf = {};
+  for (const m of byImportance) {
+    const elig = sessions.filter((s) => s.muscles.includes(m)).length;
+    want[m] = Math.min(elig, Math.max(Math.ceil(weekly[m] / MAX_SETS), weekly[m] >= 4 ? 2 : 1), 3);
+    placesOf[m] = [];
+  }
+  for (const tier of TIERS) {
+    for (const m of byImportance) {
+      const k = placesOf[m].length + 1;
+      if (k > want[m] || !tier(m, k, pri.has(m))) continue;
+      const cands = sessions.filter((s) => s.muscles.includes(m) && !placesOf[m].includes(s.idx) && room[s.idx] > 0);
+      if (!cands.length) continue;
+      cands.sort((a, b) => room[b.idx] - room[a.idx] || a.idx - b.idx);
+      placesOf[m].push(cands[0].idx);
+      room[cands[0].idx] -= 1;
     }
   }
 
-  // 2. Trim any session that runs over your time without taking a muscle below its floor.
+  // 2. Each muscle's weekly sets shared across its places: at least 2 each, then spare sets to the lightest
+  //    session, up to 5 an exercise. Beyond that, a second exercise for it where a session has room.
+  const capped = {};
+  for (const m of byImportance) {
+    const where = placesOf[m].map((i) => sessions[i]);
+    let left = weekly[m];
+    for (const s of where) {
+      const n = Math.min(2, left);
+      s.alloc[m] = n;
+      s.load += n;
+      left -= n;
+    }
+    const top = (limit) => {
+      while (left > 0) {
+        const open = where.filter((s) => s.alloc[m] < limit(s));
+        if (!open.length) return;
+        open.sort((a, b) => a.load - b.load || a.idx - b.idx);
+        open[0].alloc[m] += 1;
+        open[0].load += 1;
+        left -= 1;
+      }
+    };
+    top(() => MAX_SETS);
+    for (const s of [...where].sort((a, b) => room[b.idx] - room[a.idx] || a.load - b.load || a.idx - b.idx)) {
+      if (left <= 0) break;
+      if (room[s.idx] <= 0) continue;
+      room[s.idx] -= 1;
+      s.double[m] = true;
+      const add = Math.min(left, MAX_SETS * 2 - s.alloc[m]);
+      s.alloc[m] += add;
+      s.load += add;
+      left -= add;
+    }
+    if (left > 0) capped[m] = left;
+  }
+
+  // 3. Trim any session that runs over your time without taking a muscle below its floor.
   //    Priorities give sets back only as a last resort, and always keep more than the rest.
   const weekTotal = (m) => sum(sessions.map((s) => s.alloc[m] || 0));
   let trimmed = false;
@@ -217,31 +307,41 @@ export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
     }
   }
 
-  // 3. Pick exercises for each muscle in each session
+  // 4. Where a session still has room, a muscle with plenty of sets there gets two different exercises:
+  //    a pull-down and a row for back from 4 sets, a compound and an isolation move for the rest from 5
+  for (const s of sessions) {
+    const roomy = Object.keys(s.alloc).filter((m) => !s.double[m] && s.alloc[m] >= (m === 'back' ? 4 : MAX_SETS))
+      .sort((a, b) => (b === 'back') - (a === 'back') || importance(a) - importance(b));
+    for (const m of roomy) {
+      if (room[s.idx] <= 0) break;
+      room[s.idx] -= 1;
+      s.double[m] = true;
+    }
+  }
+
+  // 5. Pick exercises for each muscle in each session
   const occ = {};
-  const placed = new Set();
   for (const s of sessions) {
     s.slots = [];
     for (const m of ORDER) {
       const sets = s.alloc[m];
       if (!sets) continue;
       occ[m] = (occ[m] ?? -1) + 1;
-      // back gets a pull-down and a row once it has 4 sets; otherwise up to 4 sets per exercise
-      const nEx = m === 'back' && sets >= 4 ? Math.max(2, Math.ceil(sets / 4)) : sets <= 4 ? 1 : Math.ceil(sets / 4);
-      const exs = pickExercises(m, nEx, occ[m], profile, swaps, new Set(s.slots.map((x) => x.ex)), { ...ctx, placed });
+      const exs = pickExercises(m, s.double[m] ? 2 : 1, occ[m], profile, swaps, new Set(s.slots.map((x) => x.ex)), { ...ctx, placed });
       if (!exs.length) continue;
       const per = Math.floor(sets / exs.length);
       let rem = sets - per * exs.length;
       for (const ex of exs) {
         const n = per + (rem > 0 ? 1 : 0);
         if (rem > 0) rem -= 1;
-        // when only one exercise fits your equipment, cap it at 5 sets
-        s.slots.push({ ex: ex.id, m, sets: clamp(n, 2, 5), priority: pri.has(m), ...(mine.has(ex.id) ? { mine: true } : {}) });
+        // when only one exercise fits your equipment, it still stops at 5 sets
+        if (n > MAX_SETS) capped[m] = (capped[m] || 0) + n - MAX_SETS;
+        s.slots.push({ ex: ex.id, m, sets: clamp(n, 2, MAX_SETS), priority: pri.has(m), ...(mine.has(ex.id) ? { mine: true } : {}) });
       }
     }
   }
 
-  // 4. An exercise you already do that didn't fit its usual slot (a chin-up when biceps get curls, say)
+  // 6. An exercise you already do that didn't fit its usual slot (a chin-up when biceps get curls, say)
   //    takes the place of one of the planner's own picks for the same muscle
   const swappedIn = new Set(Object.values(swaps || {}));
   for (const id of mine) {
@@ -264,18 +364,8 @@ export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
     }
   }
 
-  // 5. Cardio you already do, as a finisher in up to two sessions a week each
-  const fin = finishFor(profile);
-  [...mine].map((id) => exerciseById(id)).filter((ex) => isCardio(ex) && (ex.custom || eligible(ex, profile))).forEach((own, j) => {
-    // a cardio swapped for another one (rower for the bike, say) takes its place
-    const to = swaps?.[own.id] ? exerciseById(swaps[own.id]) : null;
-    const ex = to && isCardio(to) && (to.custom || eligible(to, profile)) ? to : own;
-    for (const i of spread(sessions.length, j)) {
-      if (sessions[i].slots.some((x) => x.ex === ex.id)) continue;
-      sessions[i].slots.push({ ex: ex.id, m: 'cardio', cardio: true, min: fin.min, effort: fin.effort, ...(ex === own ? { mine: true } : {}) });
-    }
-    placed.add(own.id);
-  });
+  // 7. The cardio finishers placed at the start go at the end of their sessions
+  for (const s of sessions) if (cardioIn[s.idx]) s.slots.push(cardioIn[s.idx]);
 
   for (const s of sessions) {
     const rank = (sl) => {
@@ -309,6 +399,8 @@ export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
           : profile.equipment === 'gym' ? 'It’s a version for training at home, so your plan uses gym exercises for that muscle.'
             : 'It needs equipment you said you don’t have.';
       } else if (swaps?.[id]) why = 'You swapped it for something else.';
+      else if (cardioFull.has(id)) why = 'Each session already ends with one cardio finisher, which keeps sessions to 6 exercises. Do it on a rest day if you like.';
+      else if (!done[ex.m] && capped[ex.m]) why = `Sessions are kept to ${MAX_EXERCISES} exercises, so with ${profile.days} training days ${muscleName(ex.m).toLowerCase()} ${SINGULAR.has(ex.m) ? 'gets' : 'get'} no direct sets.`;
       else if (!done[ex.m]) why = `${muscleName(ex.m)} ${SINGULAR.has(ex.m) ? 'gets' : 'get'} no direct sets in this plan.`;
       else why = `Your other ${MUSCLE_WORD[ex.m] || ex.m} exercises filled the slots this week.`;
     }
@@ -316,6 +408,7 @@ export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
   }).filter(Boolean);
 
   return {
+    v: PROGRAM_VERSION,
     split: split.name,
     days: profile.days,
     minutes: profile.minutes,
@@ -325,6 +418,8 @@ export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
     perSession: cap,
     squeezed: globalSqueeze || trimmed,
     weekly: done,
+    // sets a muscle would have had, but that didn't fit in 6 exercises a session
+    capped,
     mine: mineReport,
     priorities: priorities.map((p) => ({ ...p })),
     sessions: sessions.map(({ id, name, type, slots, sets, minutes }) => ({ id, name, type, slots, sets, minutes })),
@@ -355,6 +450,14 @@ export function whySets(program, muscle, profile) {
   if (p?.source === 'tape') parts.push(`${SITE_REASON[p.site]} So ${name} ${verb('gets', 'get')} ${BOOST[profile.experience]} extra sets a week and ${verb('moves', 'move')} up the order in each session.`);
   if (p?.source === 'pin') parts.push(`You picked ${name} as a priority, so ${verb('it gets', 'they get')} ${muscle === 'forearms' ? '4 direct sets' : `${BOOST[profile.experience]} extra sets`} a week and ${verb('moves', 'move')} up the order in each session.`);
   const intended = muscle === 'forearms' ? 4 : baseFor + BOOST[profile.experience];
+  const lost = program.capped?.[muscle] || 0;
+  if (lost) {
+    const also = { glutes: ' Squats, lunges and Romanian deadlifts still work them hard.', abs: ' Squats, deadlifts and presses still work them as you brace.' }[muscle] || '';
+    parts.push(n
+      ? `Sessions are kept to ${MAX_EXERCISES} exercises each, cardio included, and an exercise to ${MAX_SETS} sets, so with ${program.days} training days ${name} ${verb('gets', 'get')} ${n} sets a week instead of ${n + lost}.${also} Another training day would give more room.`
+      : `Sessions are kept to ${MAX_EXERCISES} exercises each, cardio included, so with ${program.days} training days there’s no place for ${name}.${also} Another training day, or making ${name} a priority, would give ${verb('it', 'them')} one.`);
+    return parts.join(' ');
+  }
   if (p && n < intended) parts.push(`Your sessions fit about ${program.perSession} sets each, so with everything else that works out at ${n} a week. More time per session or an extra day would give more room.`);
   if (program.squeezed && !p && n < baseFor) {
     parts.push(n >= FLOOR[muscle]
@@ -381,20 +484,43 @@ export function cardioAdvice(ex, history, plannedMin, effort = 'easy') {
   return { min: Math.max(plannedMin, last.min), text: `${Math.max(plannedMin, last.min)} minutes. ${talk}` };
 }
 
-// Double progression: stay at a weight until you hit the top of the range on every set, then go up
-export function advice(ex, history, fmtW, rr = ex.rr, stop = '1 or 2') {
+// The lighter weight for a lighter week: about pct less, rounded down to the exercise's usual step.
+// If the nearest step down is more than 20% lighter (small dumbbells), the weight stays and the reps drop.
+export function lighterKg(ex, w, pct) {
+  if (!w || !pct) return w;
+  const step = ex.step || 2.5;
+  const kg = Math.round(Math.floor((w * (1 - pct)) / step + 1e-9) * step * 100) / 100;
+  return kg > 0 && kg < w && (w - kg) / w <= 0.2 ? kg : w;
+}
+
+// Double progression: stay at a weight until you hit the top of the range on every set, then go up.
+// week (from your weekly wellness check): load 'progress' as normal, 'hold' keeps last time's weight,
+// 'lighter' takes off pct (or keeps the weight with fewer reps when pct is 0).
+export function advice(ex, history, fmtW, rr = ex.rr, stop = '1 or 2', week = null) {
   const last = history && history.length ? history[history.length - 1] : null;
   const [lo, hi] = rr;
+  const mode = week?.load || 'progress';
   if (!last || !last.reps?.length) {
-    if (ex.load === 'kg') return { kg: null, text: `First time: pick a weight you could lift about ${hi + 2} times, and stop each set ${stop} reps before you'd fail.` };
-    if (ex.load === 's') return { kg: null, text: `First time: hold for as long as you can with good form, up to ${hi} seconds.` };
-    return { kg: null, text: `First time: do as many good reps as you can, stopping ${stop} short of failure.` };
+    const lighter = mode === 'lighter' ? 'Lighter week, so keep it easy. ' : '';
+    if (ex.load === 'kg') return { kg: null, text: `${lighter}First time: pick a weight you could lift about ${hi + 2} times, and stop each set ${stop} reps before you'd fail.` };
+    if (ex.load === 's') return { kg: null, text: `${lighter}First time: hold for as long as you can with good form, up to ${hi} seconds.` };
+    return { kg: null, text: `${lighter}First time: do as many good reps as you can, stopping ${stop} short of failure.` };
   }
   const allTop = last.reps.every((r) => r >= hi);
   const anyLow = last.reps.some((r) => r < lo);
 
   if (ex.load === 'kg') {
     const w = last.kg ?? 0;
+    if (mode === 'lighter') {
+      const kg = w ? lighterKg(ex, w, week.pct || 0) : 0;
+      if (!w) return { kg: null, text: `Lighter week: about ${lo} to ${Math.max(lo, hi - 2)} reps a set, stopping ${stop} short of failure.` };
+      if (kg < w) return { kg, text: `Lighter week: use ${fmtW(kg)}, about ${Math.round((1 - kg / w) * 100)}% less than last time, and stop each set ${stop} reps before you'd fail.` };
+      return { kg: w, text: `Lighter week: stay at ${fmtW(w)} but stop each set ${stop} reps before you'd fail, so you do fewer reps.` };
+    }
+    if (mode === 'hold') {
+      if (!w) return { kg: null, text: `Stay at bodyweight this week and stop each set ${stop} reps before you'd fail.` };
+      return { kg: w, text: allTop ? `You hit ${hi} on every set last time, but stay at ${fmtW(w)} this week while you recover, and go up next week.` : `Stay at ${fmtW(w)} this week and stop each set ${stop} reps before you'd fail. No need to beat last time.` };
+    }
     if (allTop) {
       if (!w) return { kg: null, text: `You hit ${hi} on every set with bodyweight. Add some load: dumbbells or a loaded backpack.` };
       return { kg: w + (ex.step || 2.5), text: `You hit ${hi} on every set last time, so go up to ${fmtW(w + (ex.step || 2.5))}, or the nearest weight up.` };
@@ -403,9 +529,13 @@ export function advice(ex, history, fmtW, rr = ex.rr, stop = '1 or 2') {
     return { kg: w || null, text: `Stay at ${w ? fmtW(w) : 'bodyweight'} and beat last time by a rep on at least one set.` };
   }
   if (ex.load === 's') {
+    if (mode === 'lighter') return { kg: null, text: `Lighter week: hold for about ${lo} seconds, well short of your limit.` };
+    if (mode === 'hold') return { kg: null, text: 'Hold for about as long as last time. No need to beat it this week.' };
     if (allTop) return { kg: null, text: `You held ${hi} s on every set. Add 10 seconds or hold something heavier.` };
     return { kg: null, text: 'Aim to hold a few seconds longer than last time.' };
   }
+  if (mode === 'lighter') return { kg: null, text: `Lighter week: about ${lo} to ${Math.max(lo, hi - 2)} reps a set, stopping ${stop} short of failure.` };
+  if (mode === 'hold') return { kg: null, text: `Aim for about what you did last time, stopping ${stop} reps short of failure. No need to beat it this week.` };
   if (allTop) {
     const next = ex.next ? exerciseById(ex.next) : null;
     if (next) return { kg: null, text: `You hit ${hi} on every set. Try the harder version, ${lcFirst(next.name)}. Swap it in from the exercise menu.`, nextEx: next.id };

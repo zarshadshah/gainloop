@@ -1,6 +1,6 @@
 # Gainloop
 
-A phone-first web app for building muscle. You measure yourself with a soft tape, it sets targets from your frame, builds training around your equipment and the exercises you already do (cardio included), and plans meals that follow your food rules and health conditions. Every exercise has illustrated how-to pictures with the kit you need. Type the food you have and an AI suggests meals from only that food, sized to your plan. Log a day off plan and it spreads the difference over the next few days. It checks in every two weeks and adjusts, saying why each time.
+A phone-first web app for building muscle. You measure yourself with a soft tape, it sets targets from your frame, builds training around your equipment and the exercises you already do (cardio included), and plans meals that follow your food rules and health conditions. Every exercise has illustrated how-to pictures with the kit you need. Type the food you have and an AI suggests meals from only that food, sized to your plan. Log a day off plan and it spreads the difference over the next few days. A five-question wellness check every Sunday sets how hard the coming week's sessions are. It checks in every two weeks and adjusts, saying why each time.
 
 It's a Progressive Web App (PWA): a website that installs to your home screen, opens full screen and works offline. There's no build step. Everything is plain HTML, CSS and JavaScript. The only server code is a small function on Cloudflare that talks to a free AI model for the AI features.
 
@@ -25,6 +25,7 @@ Most rows answer a gap found in recent reviews of Strongr Fastr, MeThreeSixty, Z
 | Meal plans assume a big shop | Type the food you have and the AI suggests meals that use only that food (plus oil, salt and spices), sized to your plan and checked against your food rules before you see them. Amounts of staples like rice, pasta and oil are checked against typical label values too. Or tick foods from a list for ideas made on the phone. Use one for any day with a tap. |
 | One day off plan derails the plan | Log a meal you skipped, swapped or added (the AI can estimate it). Gainloop spreads the difference over 3 days to 2 weeks, never more than 15% a day, protein unchanged, with optional extra cardio, and explains it. |
 | Cardio is missing or bolted on | 12 cardio options with pictures and calorie estimates. Cardio you do goes at the end of two sessions a week, kept easy while you build muscle. |
+| Plans don't care how you feel | Every Sunday, five questions on fatigue, sleep, soreness, stress and mood (scored 1 to 5, from an athlete wellness questionnaire). Compared with your own normal, the score makes the week fresh, normal, tired or lighter: sets, how close to failure, the weights to use and which exercises all follow. Sessions never go over 6 exercises. |
 | Health conditions are ignored | Diabetes (type 1, type 2, prediabetes), high blood pressure, heart and kidney conditions, coeliac disease, high cholesterol, asthma and joint pain change the meals, rep ranges and exercise choices, with safety notes. |
 
 ### Next
@@ -87,7 +88,7 @@ On iPhone the home-screen app keeps its own data, separate from Safari. Set up i
 
 ## Your data
 
-- Everything is saved in the browser on that device (`localStorage`), including any health details. The exercise search and the tick-list meal ideas run on the phone.
+- Everything is saved in the browser on that device (`localStorage`), including any health details and your weekly wellness answers, which are never sent anywhere. The exercise search and the tick-list meal ideas run on the phone.
 - The AI features send only what each one needs, and only when you tap: your food list, that meal's calorie and protein targets and your food rules for meal ideas; what you typed for an estimate; the numbers of your back-on-track plan for a coach's note. Health conditions aren't sent, only what they change about food (like a carb limit). No name, measurements or weight. Cloudflare says it doesn't use this to train AI models.
 - Clearing the site's data, or uninstalling the app, deletes it. Use **You → Download backup** (or **Copy backup**) now and then, and before you change phone.
 - Restore from **You → Restore** or from the welcome screen.
@@ -117,11 +118,12 @@ In Codespaces, open the forwarded port 8080. Edit a file, save, refresh.
 | `css/app.css` | All styling. Colours are tokens at the top, with light and dark versions. |
 | `js/app.js` | Every screen, button and form. |
 | `js/calc.js` | The maths: body fat, frame targets, calories and the check-in rules. |
-| `js/plan.js` | Builds the training plan, keeping the exercises you already do, and the progression advice. |
+| `js/plan.js` | Builds the training plan (at most 6 exercises a session), keeping the exercises you already do, and the progression advice. |
 | `js/meals.js` | Meal planner, diet and health filters, portion scaling and shopping list. |
 | `js/pantry.js` | "Cook with what you have": meal ideas from the foods you tick. |
 | `js/health.js` | Health conditions: what each one changes and its safety notes. |
 | `js/track.js` | The food log and back-on-track plans: daily targets, safe limits, extra cardio. |
+| `js/wellness.js` | The weekly wellness check: the questions, your score against your normal, and how the week's sessions change. |
 | `js/ai.js` | Talks to the AI helper and checks its answers: totals, food rules, foods you didn't list. |
 | `functions/api/ai.js` | The AI helper on Cloudflare: meal ideas, food estimates and coach notes from Workers AI. |
 | `wrangler.toml` | Cloudflare settings: the site folder and the Workers AI binding. |
@@ -150,12 +152,14 @@ In Codespaces, open the forwarded port 8080. Edit a file, save, refresh.
 - **Add cardio:** copy a cardio entry at the end of `EXERCISES` (`m: 'cardio'`, `load: 'min'`, `rr` in minutes, `met` for easy, moderate and hard from the Compendium), then give it a guide and pictures like any exercise.
 - **Add an exercise:** copy an entry in `EXERCISES` in `js/data/exercises.js`. `m` is the muscle, `k` is `c` (compound) or `i` (isolation), `eq` lists the equipment it suits, `rr` is the rep range and `step` the weight jump in kg. Add `auto: false` if the planner should only use it for people who already do it. Then give it a guide in `js/data/guides.js` and pictures in `js/data/pictures.js` (copy two pictures into `img/ex/` named `<name>-1.webp` and `<name>-2.webp`, and a small one into `img/ex/t/<name>.webp`). Without pictures it still works, it just shows the steps.
 - **Change a health rule:** `healthRules()` in `js/health.js` decides what each condition changes, and `STRESS` lists the exercises left out for each sore joint. The How the numbers work screen in `js/app.js` explains them, so update both.
+- **Change the wellness rules:** `assess()` in `js/wellness.js` turns answers into a fresh, normal, tired or lighter week, `weekSettings()` says what each week changes, and `adjustSession()` applies it to a session. The How the numbers work screen explains them, so update both.
+- **Change the exercise limit:** `MAX_EXERCISES` and `MAX_SETS` at the top of `js/plan.js`. If you change how plans are built, bump `PROGRAM_VERSION` so saved plans are rebuilt once.
 - **Change the calorie rules:** `calorieDecision()` in `js/calc.js`. The same rules are explained on the How the numbers work screen in `js/app.js`, so update both.
 - **Change colours or fonts:** the tokens at the top of `css/app.css`.
 
 ### When you add a file
 
-Add its path to `SHELL` in `sw.js` so it works offline. When you ship a big change, bump `CACHE` (for example from `gainloop-v4` to `gainloop-v5`) so old copies are cleared. Online users always get the newest files anyway, because the service worker checks the network first.
+Add its path to `SHELL` in `sw.js` so it works offline. When you ship a big change, bump `CACHE` (for example from `gainloop-v5` to `gainloop-v6`) so old copies are cleared. Online users always get the newest files anyway, because the service worker checks the network first.
 
 ---
 
@@ -179,7 +183,8 @@ The plan is to keep one codebase and grow it in phases.
 - **Body fat from the tape:** US Navy method (Hodgdon and Beckett).
 - **Calories:** Mifflin-St Jeor equation (1990), adjusted for activity and training days, then corrected at each check-in from your real weight trend.
 - **FFMI:** fat-free mass index, normalised to 1.8 m.
-- **Training:** weekly sets by experience, fitted to your days and session length; double progression.
+- **Training:** weekly sets by experience, fitted to your days and session length, with at most 6 exercises a session (cardio included) and 5 sets an exercise; double progression.
+- **Weekly wellness check:** the five questions are McLean and colleagues' wellness questionnaire (2010). Your total is compared with your own normal (the average of up to 6 recent weeks once you have 3). Fresh weeks add a set to two lifts a session; tired weeks take a set off, hold your weights and stop 2 or 3 reps from failure; lighter weeks cut sets by about 40% and weights by about 10%, keeping the main lifts and dropping accessory work, as the 2023 Delphi consensus on deloading describes. Poor sleep and stress hold the weights, and sore muscles swap stretch-heavy exercises for gentler ones you already know.
 - **Health conditions:** cautious general guidance. With diabetes, carbs are capped at about 45% of calories and meals with added sugar are left out. With kidney disease, protein is set to 0.8 g per kg, as the KDIGO 2024 guideline suggests for stage 3 to 5 chronic kidney disease without dialysis. With high blood pressure or a heart condition, sets stay at 8 or 10 reps and up, stopping short of failure, with no breath-holding.
 
 Gainloop gives general fitness guidance, not medical advice. Anyone with a health condition should check their plan with their doctor or care team, whose advice comes first.
@@ -193,6 +198,12 @@ Gainloop gives general fitness guidance, not medical advice. Anyone with a healt
 - [American Heart Association: resistance training with and without heart disease (2023)](https://professional.heart.org/en/science-news/resistance-exercise-training-in-individuals-with-and-without-cardiovascular-disease-2023-update)
 - [KDIGO 2024 guideline for chronic kidney disease](https://kdigo.org/guidelines/ckd-evaluation-and-management/)
 - Exercise data by [RepDB](https://repdb.co): the exercise illustrations come from RepDB's free tier, which allows use inside apps as long as this credit stays visible (it's also on the You screen). The pictures can't be republished as a dataset.
+- [McLean and others (2010): fatigue in rugby league players, with the wellness questionnaire](https://pubmed.ncbi.nlm.nih.gov/20861526/)
+- [Saw, Main and Gastin (2016): self-reported measures in athlete monitoring](https://bjsm.bmj.com/content/50/5/281)
+- [Bell and others (2023): an international Delphi consensus on deloading](https://doi.org/10.1186/s40798-023-00633-0)
+- [Helms and others (2016): training by reps in reserve](https://openrepository.aut.ac.nz/items/92cefeac-7c32-44f1-bfbc-f48f4a5dd8cf/full)
+- [Knowles and others (2018): poor sleep and muscle strength](https://pubmed.ncbi.nlm.nih.gov/29422383/)
+- [Stults-Kolehmainen and others (2014): stress slows recovery after hard training](https://pubmed.ncbi.nlm.nih.gov/24343323/)
 - [Cloudflare Pages: deploy from GitHub](https://developers.cloudflare.com/pages/get-started/git-integration/)
 - [Cloudflare Pages: the _headers file](https://developers.cloudflare.com/pages/configuration/headers/)
 - [Cloudflare Pages: how pages, redirects and 404s are served](https://developers.cloudflare.com/pages/platform/serving-pages/)

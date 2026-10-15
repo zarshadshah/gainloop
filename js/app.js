@@ -10,11 +10,12 @@ import { PICTURE_CREDIT, PICTURE_CREDIT_URL, frameSrcs, pictureFor, thumbSrc } f
 import { CONDITIONS, DIABETES, PAIN, STRESS, blankHealth, hasHealth, healthSummary, normHealth, repRange } from './health.js';
 import { namesMatch, searchExercises } from './search.js';
 import { matchRecipes, mealIdeas, pickableIngredients } from './pantry.js';
-import { CARDIO_FINISH, advice, cardioAdvice, nextSessionId, repText, restText, swapChoices, whySets } from './plan.js';
+import { CARDIO_FINISH, MAX_EXERCISES, MAX_SETS, PROGRAM_VERSION, advice, cardioAdvice, nextSessionId, repText, restText, swapChoices, whySets } from './plan.js';
 import { applySwap, dayTotals, mealLines, mealMacros, needsHalalNote, pantryLine, rescaleDay, shoppingList, swapOptions } from './meals.js';
-import { afterBodyChange, afterProfileChange, allowedMeals, analyseCheckin, applyCheckin, dietOf, ensureCurrentWeek, mealsById, refreshMeals, refreshProgram, rescaleMeals, rulesOf, seedDemo, startState, targetsFor, weekDate } from './engine.js';
+import { afterBodyChange, afterProfileChange, allowedMeals, analyseCheckin, applyCheckin, dietOf, ensureCurrentWeek, mealsById, refreshMeals, refreshProgram, rescaleMeals, rulesOf, seedDemo, startState, targetsFor, weekDate, wellnessChangeItems } from './engine.js';
 import { LOOKBACK, SLOT_SHARE, addLogItem, adjustmentProgress, applyCatchUp, cardioOffer, cardioToDo, catchUpOptions, dayTargets, diffOf, leaveGap, logFor, loggedMeal, markCardio, pendingGap, pruneLog, removeLogItem, stopAdjustment } from './track.js';
 import { AIError, aiMeal, aiRules, callAI, estimateTotal, slotTargets } from './ai.js';
+import { BANDS, MAX_SCORE, QUESTIONS, activeEntry, addWellness, adjustSession, adjustWeek, assess, familiarSet, history as wellnessHistory, isComplete, totalOf, weekRange, weekSettings, weekSummary, wellbeingNote, wellnessDue } from './wellness.js';
 import { APP_VERSION, blankState, clearSaved, exportText, isStorageOK, loadState, parseBackup, saveState } from './store.js';
 import { drawWeightChart, tapeHTML } from './charts.js';
 
@@ -228,7 +229,7 @@ function welcomeView() {
     <ol class="loop">
       <li><strong>Measure</strong> your arms, chest, waist and a few more spots with a soft tape.</li>
       <li><strong>Get your plan:</strong> targets from your frame, training built around your equipment and the exercises you already do, and meals that fit your food rules and health.</li>
-      <li><strong>Check in every two weeks.</strong> Calories and training adjust to what actually changed, and the app tells you why.</li>
+      <li><strong>Check in every two weeks.</strong> Calories and training adjust to what actually changed, and the app tells you why. Every Sunday, five quick questions on how you feel set how hard the week’s sessions are.</li>
     </ol>
     <div class="stack">
       <a class="btn btn-primary" href="#setup">Set up in about 3 minutes</a>
@@ -489,12 +490,15 @@ function todayView() {
       </section>`
     : '';
 
+  const wk = weekNow(t);
+  const nextWeek = next ? weekSession(next, wk) : null;
   const workout = next
     ? `<section class="card">
-        <div class="card-top"><h2 class="h3">${doneToday.length ? 'Next time' : 'Next workout'}</h2><span class="muted">about ${next.minutes} min</span></div>
+        <div class="card-top"><h2 class="h3">${doneToday.length ? 'Next time' : 'Next workout'}</h2><span class="muted">about ${nextWeek.minutes} min</span></div>
         ${doneToday.length ? `<p class="done-line">${I.check} Done today: ${esc(doneToday.join(', '))}</p>` : ''}
         <p class="big-name">${esc(next.name)}</p>
-        <p class="muted">${next.slots.slice(0, 4).map((sl) => esc(exerciseById(sl.ex)?.name || '')).join(', ')}${next.slots.length > 4 ? ` and ${next.slots.length - 4} more` : ''}</p>
+        <p class="muted">${nextWeek.slots.slice(0, 4).map((sl) => esc(exerciseById(sl.ex)?.name || '')).join(', ')}${nextWeek.slots.length > 4 ? ` and ${nextWeek.slots.length - 4} more` : ''}</p>
+        ${wk.entry ? `<p class="week-line"><a class="link" href="#wellness">${esc(BANDS[wk.w.band].name)}</a>: ${esc(weekShort(wk.w))}.</p>` : ''}
         ${r.train.length ? `<p class="card-note">${esc(r.train[0])}</p>` : ''}
         <a class="btn ${doneToday.length || status.due ? '' : 'btn-primary'}" href="#session-${next.id}">Start ${esc(next.name)}</a>
       </section>`
@@ -535,6 +539,7 @@ function todayView() {
     ${demoBanner()}${storageBanner()}
     ${healthCard}
     ${checkinCard}
+    ${wellnessDueCard(t)}
     ${trackCardHTML(t)}
     ${workout}
     ${weigh}
@@ -706,23 +711,40 @@ function trainView() {
   const lastDone = (sid) => [...S.sessionsDone].reverse().find((x) => x.sid === sid);
   const maxSets = Math.max(...Object.values(prog.weekly), 1);
   const priSet = new Set(prog.priorities.map((x) => x.muscle));
-  const muscles = MUSCLES.filter((m) => prog.weekly[m.id] > 0);
+  // muscles the 6-exercise limit left without sets still show, at 0, so you can tap for why
+  const muscles = MUSCLES.filter((m) => prog.weekly[m.id] > 0 || prog.capped?.[m.id] > 0);
   const eqName = { gym: 'gym', home: 'dumbbells at home', bw: 'bodyweight' }[p.equipment];
   const autoPri = prog.priorities.filter((x) => x.source === 'tape').map((x) => x.muscle);
   const r = rules();
   const mine = (prog.mine || []).filter((x) => exerciseById(x.id) && !isCardio(exerciseById(x.id)));
   const trainHealth = healthFor('train');
 
+  const wk = weekNow();
+  const weekBox = wk.entry
+    ? `<section class="section week-box week-${wk.w.band}">
+        <div class="section-head"><h2 class="h2">This week</h2><a class="link" href="#wellness">Your answers</a></div>
+        <p><strong>${esc(BANDS[wk.w.band].name)}</strong>, ${wk.entry.total} of ${MAX_SCORE} in your wellness check on ${fmtDate(wk.entry.d, 'day')}.</p>
+        <ul class="notes">${weekSummary(wk.w, p).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+      </section>`
+    : `<section class="section week-box">
+        <h2 class="h2">This week</h2>
+        <p>Answer the weekly wellness check and your sessions adjust to how you feel: sets, effort, weights and which exercises.</p>
+        <a class="btn" href="#wellness-answer">Answer 5 questions</a>
+      </section>`;
+
   return `<header class="screen-head"><div><h1 class="title">Train</h1><p class="muted">${esc(prog.split)}, ${p.days} days a week, ${eqName}</p></div></header>
     ${demoBanner()}
+    ${weekBox}
     <section class="section">
       <h2 class="h2">Sessions</h2>
       <ul class="list">${prog.sessions.map((s) => {
         const ld = lastDone(s.id);
+        const ws = weekSession(s, wk);
         return `<li><a class="row row-link" href="#session-${s.id}">
           <span class="row-main"><span class="row-title">${esc(s.name)}${s.id === nextId ? ' <span class="badge badge-ink">Next</span>' : ''}</span>
-          <span class="fine">${plural(s.slots.length, 'exercise')}, about ${s.minutes} min${ld ? `, last done ${relDays(ld.d, today())}` : ''}</span></span>${I.next}</a></li>`;
+          <span class="fine">${plural(ws.slots.length, 'exercise')}, about ${ws.minutes} min${ld ? `, last done ${relDays(ld.d, today())}` : ''}</span></span>${I.next}</a></li>`;
       }).join('')}</ul>
+      <p class="fine">Every session has at most ${MAX_EXERCISES} exercises, cardio included.</p>
     </section>
     ${r.train.length ? `<section class="section">
       <div class="section-head"><h2 class="h2">Training safely</h2><a class="link" href="#health">Health</a></div>
@@ -746,7 +768,7 @@ function trainView() {
     <section class="section">
       <div class="section-head"><h2 class="h2">Sets a week</h2><span class="muted">tap a muscle for why</span></div>
       <div class="bars">${muscles.map((m) => {
-        const n = prog.weekly[m.id];
+        const n = prog.weekly[m.id] || 0;
         const pri = priSet.has(m.id);
         return `<button class="bar-row" data-act="why-sets" data-m="${m.id}">
           <span class="bar-label">${m.name}${pri ? ' <span class="badge badge-tape">Priority</span>' : ''}</span>
@@ -763,7 +785,8 @@ function trainView() {
     </section>
     <section class="section">
       <h2 class="h2">How progress works</h2>
-      <p>Each exercise has a rep range. Stay at a weight until you hit the top of the range on every set, then go up. If you fall below the bottom twice, drop about 10%. Stop each set ${r.stopShort || '1 or 2'} reps before you'd fail.</p>
+      <p>Each exercise has a rep range. Stay at a weight until you hit the top of the range on every set, then go up. If you fall below the bottom twice, drop about 10%. Stop each set ${wk.w.stop} reps before you'd fail${wk.entry ? ' this week' : ''}.</p>
+      <p class="muted">Your weekly wellness check moves this up or down: a fresh week adds a set to your main lifts, a tired week takes a set off and holds your weights, and a lighter week cuts sets and weights to let you recover.</p>
     </section>`;
 }
 
@@ -774,29 +797,37 @@ function sessionView(sid) {
   const draft = S.drafts[sid] || {};
   const t = today();
   const r = rules();
+  const wk = weekNow(t);
+  const w = wk.w;
+  const ws = weekSession(s, wk);
   return `${backLink('#train', 'Train')}
-    <header class="screen-head"><div><h1 class="title">${esc(s.name)}</h1><p class="muted">${plural(s.slots.length, 'exercise')}, about ${s.minutes} min</p></div></header>
+    <header class="screen-head"><div><h1 class="title">${esc(s.name)}</h1><p class="muted">${plural(ws.slots.length, 'exercise')}, about ${ws.minutes} min</p></div></header>
+    ${wk.entry && (w.band !== 'normal' || w.load === 'hold') ? `<p class="note week-note-top"><a class="link" href="#wellness">${esc(BANDS[w.band].name)}</a>: ${esc(weekShort(w))}. Stop each set ${esc(w.stop)} reps before you’d fail.</p>` : ''}
     ${r.train.length ? `<details class="note session-notes"${S.sessionsDone.length ? '' : ' open'}><summary>Safety notes for your health</summary><ul class="notes">${r.train.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
-    ${s.slots.map((sl, i) => {
+    ${ws.slots.map((sl, i) => {
       const ex = exerciseById(sl.ex);
       if (!ex) return '';
       if (sl.cardio || isCardio(ex)) return cardioSlotHTML(sid, sl, ex, i, draft[ex.id] || {});
       const hist = (S.exLog[ex.id] || []).filter((h) => h.d < t);
       const last = hist[hist.length - 1];
-      const rr = repRange(ex, r);
-      const adv = advice(ex, hist, fLift, rr, r.stopShort || '1 or 2');
+      const rr = weekRange(repRange(ex, r), w);
+      const adv = advice(ex, hist, fLift, rr, w.stop, { load: w.load, pct: w.pct });
       const dr = draft[ex.id] || {};
       const weight = dr.kg ?? (adv.kg !== null && adv.kg !== undefined ? liftInputValue(adv.kg, U().lift) : last && ex.load === 'kg' ? liftInputValue(last.kg, U().lift) : '');
       const repsLabel = ex.load === 's' ? 'Seconds' : 'Reps';
       const sore = soreFor(ex.id);
+      const base = sl.base ? exerciseById(sl.base) : null;
+      const planned = sl.planned?.sets;
       return `<article class="exercise${sl.priority ? ' is-priority' : ''}" data-ex="${ex.id}">
         <header class="ex-head">
           <div class="ex-title">
-            <h2 class="h3">${esc(ex.name)}${sl.mine ? ' <span class="badge badge-line">You do this</span>' : ''}</h2>
-            <p class="fine">${muscleName(sl.m)}${sl.priority ? ' (priority)' : ''}, ${sl.sets} sets of ${repText(ex, rr)}, ${restText(ex)}</p>
+            <h2 class="h3">${esc(ex.name)}${sl.mine && !base ? ' <span class="badge badge-line">You do this</span>' : ''}</h2>
+            <p class="fine">${muscleName(sl.m)}${sl.priority ? ' (priority)' : ''}, ${sl.sets} sets of ${repText(ex, rr)}${planned && planned !== sl.sets ? ` (usually ${planned})` : ''}, ${restText(ex)}</p>
           </div>
-          <button class="icon-btn" data-act="swap" data-sid="${sid}" data-ex="${ex.id}" aria-label="Swap ${esc(ex.name)}">${I.swap}</button>
+          <button class="icon-btn" data-act="swap" data-sid="${sid}" data-ex="${base ? base.id : ex.id}" aria-label="Swap ${esc(base ? base.name : ex.name)}">${I.swap}</button>
         </header>
+        ${base ? `<p class="week-note">This week instead of ${esc(lcFirst(base.name))}. Your muscles are sore, and that one works them at full stretch, which is hardest on sore muscles. You already know this one, so it won’t add soreness of its own. <button class="btn-link" data-act="wellness-keep" data-ex="${base.id}">Do ${esc(lcFirst(base.name))} anyway</button></p>` : ''}
+        ${sl.soreCut ? '<p class="week-note">One set fewer: this one loads the muscle at full stretch, which is hardest on sore muscles.</p>' : ''}
         <button class="ex-guide" data-act="guide" data-ex="${ex.id}">${thumb(ex.id)}<span class="ex-guide-text"><span>How to do it</span><span class="fine">${GUIDES[ex.id] ? esc(kitText(ex.id)) : 'Steps and a video link'}</span></span></button>
         ${sore.length ? `<p class="warn">${I.alert} ${sl.mine ? 'This one stays because you already do it.' : Object.values(S.swaps).includes(ex.id) ? 'You swapped this one in.' : 'Nothing else fits your equipment here.'} Go lighter if your ${esc(andList(sore))} ${hurtVerb(sore)}, or swap it.</p>` : ''}
         <p class="advice">${esc(adv.text)}</p>
@@ -810,6 +841,7 @@ function sessionView(sid) {
         ${adv.nextEx ? `<button class="btn btn-small" data-act="swap-to" data-from="${ex.id}" data-to="${adv.nextEx}">Switch to ${esc(lcFirst(exerciseById(adv.nextEx).name))}</button>` : ''}
       </article>`;
     }).join('')}
+    ${ws.dropped.length ? `<p class="fine week-dropped">Left out this week: ${esc(andList(ws.dropped.map((x) => lcFirst(exerciseById(x.ex)?.name || ''))))}. ${w.band === 'lighter' ? 'A lighter week keeps your main lifts and drops accessory work.' : 'One exercise fewer while you’re tired.'} They’re back when you feel better.</p>` : ''}
     <div class="finish-bar"><button class="btn btn-primary btn-wide" data-act="finish" data-sid="${sid}">Finish workout</button></div>`;
 }
 
@@ -1319,7 +1351,7 @@ function restoreView() {
 
 function changesView() {
   const list = [...S.changes].reverse();
-  const kind = { setup: 'Set up', checkin: 'Check-in', measure: 'New measurements', edit: 'Details changed', track: 'Back on track', 'track-stop': 'Back on track stopped' };
+  const kind = { setup: 'Set up', checkin: 'Check-in', measure: 'New measurements', edit: 'Details changed', track: 'Back on track', 'track-stop': 'Back on track stopped', wellness: 'Wellness check' };
   return `${backLink('#you', 'You')}
     <header class="screen-head"><h1 class="title">Plan changes</h1></header>
     <p class="muted">Every change to your calories and training, with the reason.</p>
@@ -1345,6 +1377,19 @@ function mathsView() {
       <p>Every two weeks, a check-in compares how fast your 7-day average weight is moving with the target pace: about 1.25% of body weight a month for newer lifters, 0.75% with some experience and 0.4% when experienced. The first change waits until you have about 3 weeks of weigh-ins. If you're more than 0.1 kg a week off pace (or a third of the target pace, if that's bigger), calories move by half the gap, at most 250 kcal at a time. If weight is on pace but your waist is growing while arms and chest aren't, calories come down 100.</p>
       <h2 class="h2">Training</h2>
       <p>Weekly sets start at 10 to 14 per major muscle depending on experience, then get fitted to your days and session length. Progress uses double progression: stay at a weight until you reach the top of the rep range on every set, then go up.</p>
+      <p>Every session has at most ${MAX_EXERCISES} exercises, cardio included, and each exercise at most ${MAX_SETS} sets. A muscle gets one exercise in a session, or two when there’s room, such as a pull-down and a row for your back. Places go out in order of importance: your priorities first, then quads, chest and back, hamstrings and shoulders, then arms, calves, glutes and abs. When the sessions are full, the last of these move to another day or rely on the big lifts, and the Train tab says so.</p>
+      <h2 class="h2">Weekly wellness check</h2>
+      <p>Every Sunday, five questions on fatigue, sleep, muscle soreness, stress and mood, each scored from 5 (best) to 1, so the total runs from 5 to 25. They come from a wellness questionnaire McLean and colleagues used with professional rugby league players, and a systematic review of athlete monitoring found that simple self-reported measures like these track how you’re coping with training better than common objective measures such as blood tests and heart rate.</p>
+      <p>Your score is compared with your normal: the average of up to 6 recent check-ins once you have 3, kept between 13 and 19, and 15 until then. Three or more above normal is a fresh week, from 1 below to 2 above is normal, 2 to 4 below is tired, and more than that, or a score of 9 or less, is a lighter week. Any answer of 1 makes it a tired week at most, a fresh week needs no answer below 3, and a second tired week in a row becomes a lighter week.</p>
+      <ul class="notes">
+        <li><strong>Fresh:</strong> one extra set on two exercises in each session, your priority lifts first, up to ${MAX_SETS} sets, and stop 1 rep before failure (1 or 2 if you’re newer to lifting). Leaning out, sets stay as planned because a calorie deficit limits recovery.</li>
+        <li><strong>Normal:</strong> your plan as usual.</li>
+        <li><strong>Tired:</strong> one set fewer on each exercise (never below 2), at most ${MAX_EXERCISES - 1} exercises, the same weights as last time and 2 or 3 reps short of failure.</li>
+        <li><strong>Lighter:</strong> about 40% fewer sets, at most ${MAX_EXERCISES - 2} exercises, weights about 10% lighter, rounded to the plate, and 3 or 4 reps short of failure. Leaning out, the weights stay the same and the reps drop, because heavy weights help you keep muscle in a deficit.</li>
+      </ul>
+      <p>A deload of this kind follows an international expert consensus on deloading: cut the number of sets, train further from failure, keep the familiar main lifts and leave out accessory work. So in a shorter session abs and isolation exercises go first and your main compound lifts stay.</p>
+      <p>Single answers matter too. With restless sleep or insomnia, or when you’re stressed, weights don’t go up that week and sets stop 2 or 3 reps from failure: poor sleep can lower how much you can lift, and stress slows recovery from hard training. With sore muscles, exercises that load a muscle at full stretch, like Romanian deadlifts, split squats and flyes, cause the most soreness, so each swaps for a gentler one you already know, or loses a set. A new exercise would bring soreness of its own. Your health rules always win: with high blood pressure or a heart condition, sets never go closer to failure than they allow.</p>
+      <p>Two weeks running of low scores for sleep, stress or mood bring a gentle note that it can help to talk to someone. The answers stay on your phone and are never sent anywhere.</p>
       <h2 class="h2">Exercises you already do</h2>
       <p>Your exercises go to the front of the list for their muscle, so they’re picked first wherever your equipment allows. If one doesn’t fit its usual place, like a chin-up when your biceps get curls, it takes the place of one of the planner’s own picks for that muscle. If you do more exercises for a muscle than it has places in your week, the extras are left out and the app says why.</p>
       <p>Exercises you add yourself get a standard rep range for how you track them: 8 to 12 reps with weights, 8 to 15 with bodyweight, or 20 to 60 seconds for holds.</p>
@@ -1378,6 +1423,12 @@ function mathsView() {
         <li><a href="https://professional.heart.org/en/science-news/resistance-exercise-training-in-individuals-with-and-without-cardiovascular-disease-2023-update" target="_blank" rel="noopener">American Heart Association: resistance training with and without heart disease (2023)</a></li>
         <li><a href="https://kdigo.org/guidelines/ckd-evaluation-and-management/" target="_blank" rel="noopener">KDIGO 2024 guideline for chronic kidney disease</a></li>
         <li><a href="https://pacompendium.com/wp-content/uploads/2024/01/2024-adult-compendium_1_2024.pdf" target="_blank" rel="noopener">2024 Adult Compendium of Physical Activities</a></li>
+        <li><a href="https://pubmed.ncbi.nlm.nih.gov/20861526/" target="_blank" rel="noopener">McLean and others (2010): fatigue in rugby league players, with the wellness questionnaire</a></li>
+        <li><a href="https://bjsm.bmj.com/content/50/5/281" target="_blank" rel="noopener">Saw, Main and Gastin (2016): self-reported measures in athlete monitoring, a systematic review</a></li>
+        <li><a href="https://doi.org/10.1186/s40798-023-00633-0" target="_blank" rel="noopener">Bell and others (2023): an international Delphi consensus on deloading</a></li>
+        <li><a href="https://openrepository.aut.ac.nz/items/92cefeac-7c32-44f1-bfbc-f48f4a5dd8cf/full" target="_blank" rel="noopener">Helms and others (2016): training by reps in reserve</a></li>
+        <li><a href="https://pubmed.ncbi.nlm.nih.gov/29422383/" target="_blank" rel="noopener">Knowles and others (2018): poor sleep and muscle strength</a></li>
+        <li><a href="https://pubmed.ncbi.nlm.nih.gov/24343323/" target="_blank" rel="noopener">Stults-Kolehmainen and others (2014): stress slows recovery after hard training</a></li>
         <li><a href="https://developers.cloudflare.com/workers-ai/platform/privacy/" target="_blank" rel="noopener">Cloudflare Workers AI: how your data is used</a></li>
       </ul>
     </section>`;
@@ -1428,6 +1479,117 @@ function checkinView() {
       <button class="btn btn-primary" data-act="ci-apply">${a.items.some((i) => i.area !== 'note' && !/stay/.test(i.text)) ? 'Apply changes' : 'Finish check-in'}</button>
     </div>`;
 }
+
+// ----- Weekly wellness check -----
+
+// This week's settings from the check-in in force today (a normal week if there isn't one)
+function weekNow(d = today()) {
+  const entry = activeEntry(S, d);
+  return { entry, w: weekSettings(entry, S.profile, rules()) };
+}
+
+// One session as it runs this week (worked out for the whole week, so a muscle cut from one session keeps another)
+function weekSession(s, wk = weekNow()) {
+  if (!wk.entry) return { ...s, slots: s.slots.map((sl) => ({ ...sl, planned: sl })), dropped: [] };
+  const week = adjustWeek(S.program, wk.w, { profile: S.profile, rules: rules(), familiar: familiarSet(S, today()), keep: wk.entry.keep || [] });
+  return week.get(s.id) || adjustSession(s, wk.w, { profile: S.profile, rules: rules(), familiar: familiarSet(S, today()), keep: wk.entry.keep || [] });
+}
+
+// 'Tired week: one set fewer, same weights'
+function weekShort(w) {
+  const lean = S.profile.goal === 'lean';
+  const hold = w.load === 'hold' && w.band !== 'tired' ? ', no weight increases' : '';
+  return {
+    fresh: w.extra ? 'an extra set on your main lifts' : 'as planned',
+    normal: `as planned${hold}`,
+    tired: 'one set fewer, same weights',
+    lighter: lean ? 'fewer sets, same weights' : 'fewer sets, lighter weights',
+  }[w.band] + (w.band === 'fresh' ? hold : '');
+}
+
+function wellnessDueCard(t) {
+  const due = wellnessDue(S, t);
+  if (!due.due) return '';
+  const text = due.first
+    ? 'Five quick questions on your energy, sleep, soreness, stress and mood. Your sessions for the week adjust to your answers.'
+    : weekdayIndex(t) === 6
+      ? 'It’s Sunday: five quick questions, and the coming week’s sessions adjust to how you feel.'
+      : `Your last one was ${relDays(due.last.d, t)}. Five quick questions, and this week’s sessions adjust to how you feel.`;
+  return `<section class="card card-tape wellness-card">
+      <h2 class="h3">Weekly wellness check</h2>
+      <p>${esc(text)} About a minute.</p>
+      <a class="btn btn-primary" href="#wellness-answer">Answer now</a>
+    </section>`;
+}
+
+function wellnessForm() {
+  const t = today();
+  const mine = (S.wellness || []).find((e) => e.d === t);
+  const a = ui.wq || { ...(mine?.a || {}) };
+  ui.wq = a;
+  return `${backLink(activeEntry(S, t) ? '#wellness' : '#today', activeEntry(S, t) ? 'This week' : 'Today')}
+    <header class="screen-head"><h1 class="title">Weekly wellness check</h1></header>
+    <p class="muted">Answer for how you’ve felt over the last week. Best on Sunday morning, before the new week. Your sessions for the next 7 days adjust to your answers, and they stay on this phone.</p>
+    <form data-form="wellness" class="wq-form" novalidate>
+      ${QUESTIONS.map((q) => `<fieldset class="wq" id="wq-${q.id}">
+        <legend class="h3">${esc(q.name)}</legend>
+        <div class="choices wq-options">${[5, 4, 3, 2, 1].map((v) => `<input type="radio" id="wq-${q.id}-${v}" name="wq-${q.id}" value="${v}" data-change="wellness"${a[q.id] === v ? ' checked' : ''}><label for="wq-${q.id}-${v}"><span class="wq-num">${v}</span><span class="wq-text">${esc(q.options[v - 1])}</span></label>`).join('')}</div>
+      </fieldset>`).join('')}
+      <div class="finish-bar wq-bar">
+        <p class="wq-total" id="wq-total" aria-live="polite">${wqTotalText(a)}</p>
+        <button class="btn btn-primary btn-wide" type="submit">Save and set my week</button>
+      </div>
+    </form>`;
+}
+
+function wqTotalText(a) {
+  const n = QUESTIONS.filter((q) => a[q.id]).length;
+  if (!n) return 'Each answer scores from 5 (best) to 1.';
+  if (!isComplete(a)) return `<strong>${totalOf(a)}</strong> so far, ${n} of ${QUESTIONS.length} answered`;
+  const others = { ...S, wellness: (S.wellness || []).filter((e) => e.d !== today()) };
+  const res = assess(others, a, today());
+  return `<strong>${res.total}</strong> of ${MAX_SCORE}: a ${BANDS[res.band].name.toLowerCase()}`;
+}
+
+function wellnessView(param) {
+  const t = today();
+  const entry = activeEntry(S, t);
+  if (param === 'answer' || !entry) return wellnessForm();
+  ui.wq = null;
+  const w = weekSettings(entry, S.profile, rules());
+  const summary = weekSummary(w, S.profile);
+  const note = wellbeingNote(S, entry);
+  const past = wellnessHistory(S).reverse();
+  const isToday = entry.d === t;
+  return `${backLink('#today', 'Today')}
+    <header class="screen-head"><div><p class="date">Wellness check, ${fmtDate(entry.d, 'long')}</p><h1 class="title">${BANDS[entry.band].name}</h1></div></header>
+    <section class="gauge wq-gauge">
+      <div class="gauge-head"><span class="gauge-nums"><strong>${entry.total}</strong> of ${MAX_SCORE}</span><span class="gauge-nums">your normal ${fmtScore(entry.normal)}</span></div>
+      ${tapeHTML({ current: entry.total, target: entry.normal, unit: 'score', minorStep: 1, majorEvery: 5, padLo: Math.min(entry.total, entry.normal) - 5, padHi: MAX_SCORE - Math.max(entry.total, entry.normal), label: `Score ${entry.total} of ${MAX_SCORE}, your normal ${fmtScore(entry.normal)}` })}
+      <ul class="notes wq-why">${entry.why.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+    </section>
+    ${note ? `<p class="note">${esc(note)}</p>` : ''}
+    <section class="section wq-week">
+      <h2 class="h2">This week’s training</h2>
+      <ul class="notes">${summary.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+      <a class="btn btn-primary" href="#train">See this week’s sessions</a>
+    </section>
+    <section class="section">
+      <div class="section-head"><h2 class="h2">Your answers</h2><a class="link" href="#wellness-answer">${isToday ? 'Change' : 'Answer again'}</a></div>
+      <ul class="list">${QUESTIONS.map((q) => `<li class="row wq-row"><span class="wq-num${entry.a[q.id] <= 2 ? ' low' : ''}">${entry.a[q.id]}</span><span class="row-main"><span class="row-title">${esc(q.name)}</span><span class="fine">${esc(q.options[entry.a[q.id] - 1])}</span></span></li>`).join('')}</ul>
+    </section>
+    ${past.length > 1 ? `<section class="section">
+      <h2 class="h2">Past weeks</h2>
+      <div class="bars">${past.slice(0, 12).map((e) => `<div class="bar-row wq-bar-row">
+        <span class="bar-label">${fmtDate(e.d, 'day')} <span class="fine">${esc(BANDS[e.band]?.short || '')}</span></span>
+        <span class="bar-track"><span class="bar-fill${e.band === 'tired' || e.band === 'lighter' ? ' low' : ''}" style="width:${(e.total / MAX_SCORE) * 100}%"></span></span>
+        <span class="bar-value">${e.total}</span>
+      </div>`).join('')}</div>
+    </section>` : ''}
+    <p class="fine">The questions come from a wellness questionnaire used with athletes. Your score is compared with your own normal, the average of your recent weeks, because everyone answers a little differently. <a class="link" href="#maths">How it works</a></p>`;
+}
+
+const fmtScore = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
 // ----- Exercise guides, your exercises and the library -----
 
@@ -1839,10 +2001,11 @@ const VIEWS = {
   health: healthView,
   ontrack: ontrackView,
   log: logView,
+  wellness: wellnessView,
 };
 
 const TAB_OF = {
-  today: 'today', checkin: 'today', ontrack: 'today', log: 'today', body: 'body', measure: 'body', frame: 'body', bodyfat: 'body',
+  today: 'today', checkin: 'today', ontrack: 'today', log: 'today', wellness: 'today', body: 'body', measure: 'body', frame: 'body', bodyfat: 'body',
   train: 'train', session: 'train', myex: 'train', library: 'train',
   eat: 'eat', shop: 'eat', mealnew: 'eat', rules: 'eat', pantry: 'eat',
   you: 'you', profile: 'you', restore: 'you', changes: 'you', maths: 'you', health: 'you',
@@ -1879,6 +2042,7 @@ function render() {
   if (S.profile) pruneLog(S, today());
   if (S.profile && ensureCurrentWeek(S, today())) save();
   if (r.name !== 'checkin') ui.checkin = null;
+  if (r.name !== 'wellness') ui.wq = null;
   if (r.name !== 'setup' && r.name !== 'profile') ui.setup = null;
   view.innerHTML = VIEWS[r.name](r.param);
   renderTabs(r);
@@ -2130,10 +2294,17 @@ const ACTIONS = {
   },
   'why-sets'(el) {
     const m = el.dataset.m;
-    openSheet({ type: 'html', title: `${muscleName(m)}: ${S.program.weekly[m]} sets a week`, html: `<p>${esc(whySets(S.program, m, S.profile))}</p>` });
+    openSheet({ type: 'html', title: `${muscleName(m)}: ${S.program.weekly[m] || 0} sets a week`, html: `<p>${esc(whySets(S.program, m, S.profile))}</p>` });
   },
   swap(el) {
     openSheet({ type: 'swap', title: 'Swap exercise', sid: el.dataset.sid, ex: el.dataset.ex });
+  },
+  // Keep your usual exercise this week instead of the gentler one the wellness check picked
+  'wellness-keep'(el) {
+    const entry = activeEntry(S, today());
+    if (!entry) return;
+    entry.keep = [...new Set([...(entry.keep || []), el.dataset.ex])];
+    commit(`Back to ${lcFirst(exerciseById(el.dataset.ex)?.name || 'your usual exercise')} this week`);
   },
   'swap-to'(el) {
     const from = el.dataset.from;
@@ -2531,6 +2702,11 @@ const CHANGES = {
     render();
   },
   'ai-slot'(el) { ui.aiSlot = el.value; },
+  wellness(el) {
+    ui.wq = { ...(ui.wq || {}), [el.name.replace(/^wq-/, '')]: Number(el.value) };
+    const box = document.getElementById('wq-total');
+    if (box) box.innerHTML = wqTotalText(ui.wq);
+  },
   'lib-filter'(el) {
     ui.libFilter = el.value;
     const list = document.getElementById('lib-list');
@@ -2573,6 +2749,28 @@ const LIVE = {
 };
 
 const FORMS = {
+  wellness(form) {
+    const a = {};
+    for (const q of QUESTIONS) {
+      const v = Number(fval(form, `wq-${q.id}`));
+      if (v) a[q.id] = v;
+    }
+    if (!isComplete(a)) {
+      const miss = QUESTIONS.find((q) => !a[q.id]);
+      toast(`Answer ${QUESTIONS.length - Object.keys(a).length === 1 ? 'the last question' : 'every question'} first`);
+      document.getElementById(`wq-${miss.id}`)?.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'center' });
+      return;
+    }
+    const t = today();
+    const entry = addWellness(S, t, a);
+    // answering again the same day replaces that day's note in your plan changes
+    S.changes = S.changes.filter((c) => !(c.kind === 'wellness' && c.d === t));
+    S.changes.push({ d: t, kind: 'wellness', items: wellnessChangeItems(S, entry) });
+    ui.wq = null;
+    save();
+    location.hash = '#wellness';
+    toast(`${BANDS[entry.band].name}: your sessions are set`);
+  },
   setup(form) {
     const st = ui.setup;
     if (!captureSetup(form, true)) { render(); return; }
@@ -2864,12 +3062,18 @@ function wire() {
   window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
 }
 
-// A plan saved by an older version may name exercises that have since been replaced: rebuild it
+// A plan saved by an older version may name exercises that have since been replaced, or be built the
+// old way with more than 6 exercises in a session: rebuild it
 function repairProgram() {
   if (!S.profile || !S.program) return;
   syncCustoms();
-  if (S.program.sessions.some((s) => s.slots.some((sl) => !exerciseById(sl.ex)))) {
+  const missing = S.program.sessions.some((s) => s.slots.some((sl) => !exerciseById(sl.ex)));
+  const before = Math.max(...S.program.sessions.map((s) => s.slots.length));
+  if (missing || S.program.v !== PROGRAM_VERSION) {
     refreshProgram(S);
+    if (before > MAX_EXERCISES) {
+      S.changes.push({ d: today(), kind: 'edit', items: [{ area: 'training', text: `Sessions now have at most ${MAX_EXERCISES} exercises`, why: `Your longest session had ${before}. Each muscle now gets one exercise of up to ${MAX_SETS} sets in a session (two when there’s room), so the same work fits in fewer exercises. Where a session is full, smaller muscles like calves, glutes and abs move to another day, or rely on the big lifts.` }] });
+    }
     save();
   }
 }

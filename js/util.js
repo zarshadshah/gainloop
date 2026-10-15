@@ -110,7 +110,9 @@ export const shuffled = (arr, rand) => {
 };
 
 // Lower-case the first letter of a name for use mid-sentence, keeping words like Greek or EZ intact
-export const lcFirst = (s) => (s && s.length > 1 && s[1] === s[1].toLowerCase() ? s[0].toLowerCase() + s.slice(1) : s);
+// 'Barbell row' becomes 'barbell row' mid-sentence, but names of places and people keep their capital
+const PROPER = /^(Romanian|Bulgarian|Nordic|Smith|Arnold|Zottman|Pallof|Copenhagen|Russian|Turkish|Greek|Mum’s|Mum's)\b/;
+export const lcFirst = (s) => (s && s.length > 1 && s[1] === s[1].toLowerCase() && !PROPER.test(s) ? s[0].toLowerCase() + s.slice(1) : s);
 
 export const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
