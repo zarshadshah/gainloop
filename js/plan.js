@@ -38,7 +38,7 @@ const PROGRESSIONS = new Set(EXERCISES.filter((e) => e.next).map((e) => e.next))
 export const MAX_EXERCISES = 6;
 export const MAX_SETS = 5;
 // Bumped when the way plans are built changes, so saved plans are rebuilt once
-export const PROGRAM_VERSION = 3;
+export const PROGRAM_VERSION = 4;
 
 // When sessions are full, places in the week go out in this order (your priorities always first).
 // Glutes and abs come last because squats, lunges, deadlifts and presses already work them hard.
@@ -63,9 +63,12 @@ const TIERS = [
 export const setsPerSession = (minutes) => clamp(Math.round((minutes - 8) / 2.6), 10, 32);
 export const estimateMinutes = (sets) => Math.round(sets * 2.6 + 8);
 
-// Cardio you already do goes at the end of up to two sessions a week each: kept easy while building
-// muscle so it helps your heart and recovery without eating into your gains.
-export const CARDIO_FINISH = { build: { min: 15, effort: 'easy' }, recomp: { min: 20, effort: 'moderate' }, lean: { min: 25, effort: 'moderate' } };
+// Every session ends with 10 minutes of cardio, one of its 6 exercises: kept easy while building muscle so
+// it helps your heart and recovery without eating into your gains. Cardio you already do goes in first.
+export const CARDIO_MIN = 10;
+export const CARDIO_FINISH = { build: { min: CARDIO_MIN, effort: 'easy' }, recomp: { min: CARDIO_MIN, effort: 'moderate' }, lean: { min: CARDIO_MIN, effort: 'moderate' } };
+// What the finisher is when you haven't picked cardio of your own: easy to do wherever you train
+const DEFAULT_CARDIO = { gym: ['incline-walk', 'bike', 'cross-trainer'], home: ['brisk-walk', 'jumping-jacks', 'mountain-climbers'], bw: ['brisk-walk', 'jumping-jacks', 'mountain-climbers'] };
 const finishFor = (profile) => CARDIO_FINISH[profile.goal] || CARDIO_FINISH.build;
 // Evenly spaced sessions for the j-th cardio: 0 and 2 of four sessions, then 1 and 3 for the next
 function spread(n, j) {
@@ -205,6 +208,7 @@ export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
   const cap = setsPerSession(profile.minutes);
   const pri = new Set(priorities.map((p) => p.muscle));
   const priOrder = priorities.map((p) => p.muscle);
+  const avoidSet = ctx.avoid || new Set();
   const sessions = split.sessions.map(([id, name, type], idx) => ({ id, name, type, idx, muscles: TYPE_MUSCLES[type], alloc: {}, double: {}, load: 0 }));
   const placed = new Set();
 
@@ -228,6 +232,17 @@ export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
     if (n) placed.add(own.id);
     else cardioFull.add(own.id);
   });
+
+  // 0b. Every session without cardio of your own ends with a default 10 minute finisher
+  for (const s of sessions) {
+    if (cardioIn[s.idx]) continue;
+    const all = DEFAULT_CARDIO[profile.equipment] || DEFAULT_CARDIO.gym;
+    // not the ones your joints would rather avoid, while there is another
+    const kind = all.filter((id) => !avoidSet.has(id));
+    const list = kind.length ? kind : all;
+    const ex = exerciseById(list[s.idx % list.length]);
+    cardioIn[s.idx] = { ex: ex.id, m: 'cardio', cardio: true, min: fin.min, effort: fin.effort, auto: true };
+  }
 
   // 1. Places in the week. A muscle takes one exercise of up to 5 sets in a session, and a session holds
   //    6 exercises. Places go out in order of importance, each to the session with the most room left.
@@ -369,7 +384,6 @@ export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
   //     muscle of the session, then a second exercise for a muscle already there.
   const padded = {};
   const weekOf = (m) => sum(sessions.map((t) => sum(t.slots.filter((x) => x.m === m).map((x) => x.sets))));
-  const avoidSet = ctx.avoid || new Set();
   // loose: allow an exercise your joints would rather avoid, only when nothing else can fill the session
   const addTo = (s, m, sets, loose = false) => {
     occ[m] = (occ[m] ?? -1) + 1;
@@ -557,6 +571,7 @@ export function advice(ex, history, fmtW, rr = ex.rr, stop = '1 or 2', week = nu
   const [lo, hi] = rr;
   const mode = week?.load || 'progress';
   if (!last || !last.reps?.length) {
+    if (ex.load === 'kg' && week?.start) return { kg: week.start, text: `First time: start at ${fmtW(week.start)}, worked out from your one rep max tests. It is a weight you could lift about ${hi + 2} times. Stop each set ${stop} reps before you'd fail, and go a little lighter or heavier if it feels off.` };
     if (ex.load === 'kg') return { kg: null, text: `First time: pick a weight you could lift about ${hi + 2} times, and stop each set ${stop} reps before you'd fail.` };
     if (ex.load === 's') return { kg: null, text: `First time: hold for as long as you can with good form, up to ${hi} seconds.` };
     return { kg: null, text: `First time: do as many good reps as you can, stopping ${stop} short of failure.` };

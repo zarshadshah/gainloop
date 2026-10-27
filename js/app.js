@@ -16,6 +16,8 @@ import { afterBodyChange, afterProfileChange, allowedMeals, analyseCheckin, appl
 import { LOOKBACK, SLOT_SHARE, addLogItem, adjustmentProgress, applyCatchUp, cardioOffer, cardioToDo, catchUpOptions, dayTargets, diffOf, leaveGap, logFor, loggedMeal, markCardio, pendingGap, pruneLog, removeLogItem, stopAdjustment } from './track.js';
 import { AIError, aiMeal, aiRules, callAI, estimateTotal, slotTargets } from './ai.js';
 import { BANDS, MAX_SCORE, QUESTIONS, activeEntry, addWellness, adjustWeek, assess, familiarSet, history as wellnessHistory, isComplete, totalOf, weekSettings, weekSummary, wellbeingNote, wellnessDue } from './wellness.js';
+import * as PQ from './parq.js';
+import * as ST from './strength.js';
 import { LOAD_GROUPS, MAX_CHANGE, closeWeeks, groupOf, planWeek, rxText, weekSoFar } from './load.js';
 import { APP_VERSION, blankState, clearSaved, exportText, isStorageOK, loadState, parseBackup, saveState } from './store.js';
 import { drawWeightChart, tapeHTML } from './charts.js';
@@ -228,12 +230,13 @@ function welcomeView() {
     <h1 class="display">Gainloop</h1>
     <p class="lede">Build muscle with a plan that checks your tape measure and adjusts.</p>
     <ol class="loop">
-      <li><strong>Measure</strong> your arms, chest, waist and a few more spots with a soft tape.</li>
-      <li><strong>Get your plan:</strong> targets from your frame, training built around your equipment and the exercises you already do, and meals that fit your food rules and health.</li>
+      <li><strong>Tell us about you</strong> and answer a short health questionnaire (the PAR-Q+), so training starts safely.</li>
+      <li><strong>Test your strength</strong> on seven lifts. Your one rep max for each sets your starting weights, for those lifts and every other exercise.</li>
+      <li><strong>Get your plan:</strong> six exercises a session ending with 10 minutes of cardio, built around your equipment and the exercises you already do, with meals that fit your food rules and health.</li>
       <li><strong>Check in every two weeks.</strong> Calories and training adjust to what actually changed, and the app tells you why. Every Sunday, five quick questions on how you feel set how hard the week’s sessions are.</li>
     </ol>
     <div class="stack">
-      <a class="btn btn-primary" href="#setup">Set up in about 3 minutes</a>
+      <a class="btn btn-primary" href="#setup">Set up in about 5 minutes</a>
       <button class="btn" data-act="demo">Explore with example data</button>
       <a class="btn-link" href="#restore">Restore a backup</a>
     </div>
@@ -252,13 +255,21 @@ function newDraft(mode) {
 }
 
 // Health and the exercises you already do have their own screens once you're set up, so editing skips them
-const NEW_STEPS = ['about', 'health', 'training', 'exercises', 'goal', 'food', 'measure'];
+const NEW_STEPS = ['about', 'health', 'training', 'exercises', 'goal', 'food'];
 const EDIT_STEPS = ['about', 'training', 'goal', 'food'];
 const stepsFor = (mode) => (mode === 'edit' ? EDIT_STEPS : NEW_STEPS);
 
+function newSetup(mode) {
+  if (mode === 'parq') return { mode, phase: 'parq', step: 0, draft: newDraft('edit'), error: '', parq: newParq() };
+  if (mode === 'baseline') return { mode, phase: 'base', step: 0, draft: newDraft('edit'), error: '', base: newBase() };
+  return { mode, phase: 'details', step: 0, draft: newDraft(mode), error: '' };
+}
+
 function setupView(mode = 'new') {
-  if (!ui.setup || ui.setup.mode !== mode) ui.setup = { mode, step: 0, draft: newDraft(mode), error: '' };
+  if (!ui.setup || ui.setup.mode !== mode) ui.setup = newSetup(mode);
   const st = ui.setup;
+  if (st.phase === 'parq') return parqView(st);
+  if (st.phase === 'base') return baseView(st);
   const d = st.draft;
   const steps = stepsFor(mode);
   const name = steps[st.step];
@@ -306,15 +317,6 @@ function setupView(mode = 'new') {
       <h1 class="title">Food rules</h1>
       <p class="muted">Meals that break a rule are never put in your plan.</p>
       ${dietFields(d.diet)}`;
-  } else if (name === 'measure') {
-    body = `
-      <h1 class="title">Measurements</h1>
-      <p class="muted">A soft tape and five minutes. Skip any you can't do now and add them later.</p>
-      <h2 class="h2">Your frame</h2>
-      <p class="fine">Wrist and ankle size sets your targets. Measure once.</p>
-      ${C.FRAME_SITES.map((s) => measureField(s.id, d.frame[s.id] ?? null, null, d.sex)).join('')}
-      <h2 class="h2">Today</h2>
-      ${C.sitesFor(d.sex).map((s) => measureField(s.id, d.cm[s.id] ?? null, null, d.sex)).join('')}`;
   }
 
   return `<section class="setup">
@@ -327,8 +329,7 @@ function setupView(mode = 'new') {
       ${body}
       ${st.error ? `<p class="error" role="alert">${esc(st.error)}</p>` : ''}
       <div class="form-actions">
-        <button class="btn btn-primary" type="submit">${last ? (mode === 'edit' ? 'Save changes' : 'Make my plan') : 'Continue'}</button>
-        ${name === 'measure' ? '<button class="btn-link" type="button" data-act="setup-skip">Skip measurements for now</button>' : ''}
+        <button class="btn btn-primary" type="submit">${last && mode === 'edit' ? 'Save changes' : 'Continue'}</button>
       </div>
     </form>
   </section>`;
@@ -397,14 +398,11 @@ function captureSetup(form, strict) {
     if (d.goal === 'lean' && !lean.ok) d.goal = 'build';
   } else if (name === 'food') {
     d.diet = readDiet(form);
-  } else if (name === 'measure') {
-    for (const s of C.FRAME_SITES) d.frame[s.id] = readLen(form, `m-${s.id}`);
-    for (const s of C.sitesFor(d.sex)) d.cm[s.id] = readLen(form, `m-${s.id}`);
   }
   return true;
 }
 
-function finishSetup(withMeasures) {
+function finishSetup() {
   const d = ui.setup.draft;
   const t = today();
   const keep = { units: S.units, theme: S.theme };
@@ -412,18 +410,22 @@ function finishSetup(withMeasures) {
   S.profile = {
     name: d.name, sex: d.sex, age: Number(d.age), ageSetOn: t, heightCm: round(d.heightCm, 1), experience: d.experience, goal: d.goal,
     days: d.days, minutes: d.minutes, equipment: d.equipment, pullupBar: d.pullupBar, activity: d.activity, diet: d.diet,
-    health: normHealth(d.health),
+    health: normHealth(withConditions(d.health, PQ.conditionsFrom(ui.setup.parq?.answers))),
   };
+  S.parq = ui.setup.parq ? parqRecord(ui.setup.parq, t) : null;
   S.customExercises = [...(d.customEx || [])];
   S.myExercises = [...(d.myEx || [])];
   setCustomExercises(S.customExercises);
   S.weights = [{ d: t, kg: round(d.kg, 2) }];
-  if (withMeasures) {
-    if (d.frame.wrist && d.frame.ankle) S.frame = { wrist: round(d.frame.wrist, 1), ankle: round(d.frame.ankle, 1), d: t };
-    const cm = Object.fromEntries(Object.entries(d.cm).filter(([, v]) => Number.isFinite(v) && v > 0).map(([k, v]) => [k, round(v, 1)]));
-    if (Object.keys(cm).length) S.measures = [{ id: uid('m'), d: t, cm }];
-  }
+  S.baseline = ui.setup.base && ST.testLifts(d.equipment).length ? ST.makeBaseline(ui.setup.base.tested, S.profile, d.kg, t) : null;
   startState(S, t);
+  const extra = [];
+  if (S.parq) extra.push({ area: 'health', text: `PAR-Q+ completed: ${{ clear: 'cleared for physical activity', ready: 'ready to become more physically active', seek: 'further advice recommended before you start' }[S.parq.level]}`, why: 'Valid for 12 months. You can answer it again from the You tab.' });
+  if (S.baseline) {
+    const n = Object.values(S.baseline.lifts).filter((l) => l.tested).length;
+    extra.push({ area: 'training', text: n ? `Starting weights set from your one rep max on ${plural(n, 'lift')}` : 'Starting weights estimated from your body weight and experience', why: 'One rep max = weight ÷ (1.0278 − 0.0278 × reps), rounded to the nearest 2.5 kg. Other exercises are worked out from how strong they usually are compared with those lifts.' });
+  }
+  if (extra.length) S.changes[S.changes.length - 1].items.push(...extra);
   ui.setup = null;
   save();
   location.hash = '#today';
@@ -448,6 +450,213 @@ function finishEdit() {
   toast(items.length ? 'Saved. Your plan has been updated.' : 'Saved');
 }
 
+// ----- Health questionnaire (PAR-Q+) and starting strength -----
+
+const newParq = () => ({ answers: {}, notes: {}, i: 0, name: S.profile?.name || '', guardian: '', agree: false, ack: false });
+const newBase = () => ({ i: -1, tested: {}, draft: {} });
+
+const withConditions = (h, conds) => {
+  const base = normHealth(h);
+  return { ...base, conditions: [...new Set([...base.conditions, ...conds])] };
+};
+
+function parqRecord(p, t) {
+  const answers = PQ.reached(p.answers);
+  const notes = {};
+  for (const id of PQ.listIds(answers)) if ((p.notes[id] || '').trim()) notes[id] = p.notes[id].trim().slice(0, 300);
+  return { d: t, v: PQ.PARQ_VERSION, level: PQ.outcome(answers), answers, notes, name: p.name, ...(p.guardian ? { guardian: p.guardian } : {}) };
+}
+
+// Turn web addresses in the form's own wording into links
+const linkify = (text) => esc(text).replace(/(https?:\/\/[^\s)]+|www\.eparmedx\.com)/g, (u) => `<a class="link" href="${u.startsWith('http') ? u : `https://${u}`}" target="_blank" rel="noopener">${u}</a>`);
+
+function parqView(st) {
+  const p = st.parq;
+  const { list, done } = PQ.flow(p.answers);
+  p.i = Math.max(0, Math.min(p.i, done ? list.length : list.length - 1));
+  const onForm = done && p.i >= list.length;
+  const total = Math.max(list.length + (done ? 1 : 0), PQ.GENERAL.length + 1);
+  const head = `<div class="steps">
+      ${st.mode === 'parq' && p.i === 0 ? backLink('#you', 'You') : `<button class="back" type="button" data-act="setup-back">${I.back}<span>Back</span></button>`}
+      <span class="step-count">${onForm ? 'Your result' : `Question ${p.i + 1}`}</span>
+    </div>
+    <div class="step-bar"><span style="width:${((p.i + 1) / total) * 100}%"></span></div>`;
+  const credit = `<p class="fine parq-credit">${linkify(PQ.CREDIT)}</p>`;
+
+  if (!onForm) {
+    const q = list[p.i];
+    const cur = p.answers[q.id];
+    const first = p.i === 0;
+    const followUp = q.kind !== 'general' && (q.id === 's1' || (list[p.i - 1] && list[p.i - 1].kind === 'general'));
+    return `<section class="setup parq">${head}
+      <div class="parq-q">
+        ${first ? `<p class="parq-title"><strong>PAR-Q+</strong> The Physical Activity Readiness Questionnaire for Everyone</p><p class="muted">${esc(PQ.INTRO)}</p><p class="muted">Please read the 7 questions carefully and answer each one honestly. Tap Yes or No and the next question comes up.</p>` : ''}
+        ${followUp ? '<p class="note">You answered YES to at least one question, so a few more about your medical condition(s) follow. Answer NO to any that do not apply to you.</p>' : ''}
+        <p class="parq-sec">${esc(q.section ? `Follow-up: ${q.section}` : 'General health questions')}</p>
+        <h1 class="title parq-text">${esc(q.text)}</h1>
+        ${q.note ? `<p class="muted">${esc(q.note)}</p>` : ''}
+        <div class="yn" role="group" aria-label="Your answer">
+          <button type="button" class="btn yn-btn${cur === 'yes' ? ' on' : ''}" aria-pressed="${cur === 'yes'}" data-act="parq-answer" data-q="${q.id}" data-v="yes">Yes</button>
+          <button type="button" class="btn yn-btn${cur === 'no' ? ' on' : ''}" aria-pressed="${cur === 'no'}" data-act="parq-answer" data-q="${q.id}" data-v="no">No</button>
+        </div>
+      </div>
+      ${credit}
+    </section>`;
+  }
+
+  const level = PQ.outcome(p.answers);
+  const R = PQ.RESULT[level];
+  const age = Number(st.draft.age);
+  const secs = PQ.yesSections(p.answers);
+  const lists = PQ.listIds(p.answers);
+  return `<section class="setup parq">${head}
+    <form data-form="parq" novalidate>
+      <h1 class="title">${esc(R.title)}</h1>
+      <p>${esc(R.lead)}</p>
+      ${secs.length ? `<p class="fine">You answered YES to: ${esc(andList(secs.map(lcFirst)))}.</p>` : ''}
+      <ul class="notes">${R.points.map((x) => `<li>${linkify(x)}</li>`).join('')}</ul>
+      ${level === 'seek' ? `<p class="note">${I.alert} You can still use Gainloop, but please take this advice before you start training.</p>` : ''}
+      ${lists.length ? `<h2 class="h2">Details <span class="opt">optional</span></h2>${lists.map((id) => field(`pq-${id}`, esc(PQ.LIST_LABEL[id]), `<textarea id="pq-${id}" name="pq-${id}" rows="2" maxlength="300">${esc(p.notes[id] || '')}</textarea>`)).join('')}` : ''}
+      <h2 class="h2">${esc(PQ.delay(level).title)}</h2>
+      <ul class="notes">${PQ.delay(level).points.map((x) => `<li>${linkify(x)}</li>`).join('')}</ul>
+      <p class="fine">${esc(PQ.LIABILITY)}</p>
+      <h2 class="h2">Participant declaration</h2>
+      <p>${esc(PQ.declaration(level))}</p>
+      ${age < 18 ? `<p class="muted">${esc(PQ.GUARDIAN)}</p>${field('pq-guardian', 'Parent, guardian or care provider’s name', `<input id="pq-guardian" name="pq-guardian" maxlength="60" autocomplete="off" value="${esc(p.guardian || '')}">`)}` : ''}
+      ${field('pq-name', 'Your full name', `<input id="pq-name" name="pq-name" maxlength="60" autocomplete="name" value="${esc(p.name || '')}">`, 'Typing your name is your signature. It is kept on this device only.')}
+      <div class="field check"><input type="checkbox" id="pq-agree" name="pq-agree"${p.agree ? ' checked' : ''}><label for="pq-agree">I have read, understood and completed this questionnaire</label></div>
+      ${level === 'seek' ? `<div class="field check"><input type="checkbox" id="pq-ack" name="pq-ack"${p.ack ? ' checked' : ''}><label for="pq-ack">I understand that I should get further advice before becoming more active</label></div>` : ''}
+      ${st.error ? `<p class="error" role="alert">${esc(st.error)}</p>` : ''}
+      <div class="form-actions"><button class="btn btn-primary" type="submit">${st.mode === 'parq' ? 'Save' : 'Continue'}</button></div>
+      ${credit}
+    </form>
+  </section>`;
+}
+
+// Keep what has been typed on the result screen; with strict, check it
+function captureParqForm(strict = false) {
+  const st = ui.setup;
+  const p = st?.parq;
+  const form = document.querySelector('form[data-form="parq"]');
+  if (!p || !form) return true;
+  st.error = '';
+  p.name = fval(form, 'pq-name').trim().slice(0, 60);
+  p.guardian = fval(form, 'pq-guardian').trim().slice(0, 60);
+  p.agree = fchecked(form, 'pq-agree');
+  p.ack = fchecked(form, 'pq-ack');
+  for (const id of Object.keys(PQ.LIST_LABEL)) {
+    const el = fe(form, `pq-${id}`);
+    if (el) p.notes[id] = el.value.slice(0, 300);
+  }
+  if (!strict) return true;
+  const fail = (msg) => { st.error = msg; return false; };
+  if (!p.name) return fail('Type your full name to sign.');
+  if (Number(st.draft.age) < 18 && !p.guardian) return fail('A parent, guardian or care provider must also sign. Type their name.');
+  if (!p.agree) return fail('Tick the box to say you have read and completed the questionnaire.');
+  if (PQ.outcome(p.answers) === 'seek' && !p.ack) return fail('Tick the box to say you understand the advice.');
+  return true;
+}
+
+const basePreview = (w, reps) => {
+  const v = parseNum(w);
+  const r = Number(reps);
+  if (v === null || v <= 0 || !r) return 'Enter the weight and the reps to see your one rep max.';
+  const rm = ST.oneRepMax(liftToKg(v, U().lift), r);
+  return rm ? `Your estimated one rep max: <strong>${esc(fLift(rm))}</strong>` : 'Reps must be a whole number from 1 to 10.';
+};
+
+function baseView(st) {
+  const b = st.base;
+  const d = st.draft;
+  const lifts = ST.testLifts(d.equipment);
+  const n = lifts.length;
+  b.i = Math.max(-1, Math.min(b.i, n));
+  const i = b.i;
+  const head = `<div class="steps">
+      ${st.mode === 'baseline' && i === -1 ? backLink('#you', 'You') : `<button class="back" type="button" data-act="setup-back">${I.back}<span>Back</span></button>`}
+      <span class="step-count">${i < 0 ? 'Your starting strength' : i < n ? `Lift ${i + 1} of ${n}` : 'Summary'}</span>
+    </div>
+    <div class="step-bar"><span style="width:${((i + 2) / (n + 2)) * 100}%"></span></div>`;
+  const home = d.equipment === 'home';
+
+  if (i === -1) {
+    return `<section class="setup base">${head}
+      <h1 class="title">Your starting strength</h1>
+      <p>Your starting weights come from your one rep max (1RM), the heaviest weight you could lift once. You don’t have to lift that. For each of ${n} lifts, pick a weight you can lift between 1 and 10 times, do as many good reps as you can, and Gainloop works out your 1RM.</p>
+      <p class="formula">1RM = weight ÷ (1.0278 − 0.0278 × reps)</p>
+      <p class="muted">It is rounded to the nearest 2.5 kg. The ${n} lifts: ${esc(andList(lifts.map((l) => l.name.toLowerCase())))}.${home ? ' Enter the weight of one dumbbell.' : ''}</p>
+      <ul class="notes">
+        <li>Warm up first with a few light sets.</li>
+        <li>Stop a set when your form slips, not when you are completely out of reps.</li>
+        <li>Use a spotter or safety bars on the bench press, squat and shoulder press.</li>
+        <li>If a lift is new to you or hurts, skip it. Gainloop estimates it from your body weight and your other lifts.</li>
+      </ul>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="button" data-act="base-start">Start</button>
+        <button class="btn-link" type="button" data-act="base-skip-all">Skip all and estimate from my body weight</button>
+      </div>
+    </section>`;
+  }
+
+  if (i < n) {
+    const l = lifts[i];
+    const t = b.tested[l.id];
+    const dr = b.draft[l.id] || (t ? { w: liftInputValue(t.weight, U().lift), r: String(t.reps) } : { w: '', r: '' });
+    return `<section class="setup base">${head}
+      <form data-form="base" novalidate>
+        <h1 class="title">${esc(l.name)}</h1>
+        <p class="muted">Pick a weight you can lift between 1 and 10 times with good form, and do as many reps as you can.${l.each ? ' Enter the weight of one dumbbell.' : ''} If you can do more than 10, use a heavier weight.</p>
+        ${ST.TEST_TIPS[l.id] ? `<p class="note">${I.alert} ${esc(ST.TEST_TIPS[l.id])}</p>` : ''}
+        ${field('bweight', `Weight${l.each ? ' (each dumbbell)' : ''}`, numBox('bweight', dr.w, liftUnit(), { live: 'base' }))}
+        <fieldset class="field"><legend>Reps you did</legend>${seg('breps', Array.from({ length: ST.MAX_TEST_REPS }, (_, k) => [k + 1, String(k + 1)]), dr.r, 'base-reps')}</fieldset>
+        <p class="note" id="base-preview" aria-live="polite">${basePreview(dr.w, dr.r)}</p>
+        ${st.error ? `<p class="error" role="alert">${esc(st.error)}</p>` : ''}
+        <div class="form-actions">
+          <button class="btn btn-primary" type="submit">Next</button>
+          <button class="btn-link" type="button" data-act="base-skip">I haven’t tried this one</button>
+        </div>
+      </form>
+    </section>`;
+  }
+
+  const bl = ST.makeBaseline(b.tested, d, d.kg, today());
+  const rows = ST.summary(bl);
+  return `<section class="setup base">${head}
+    <form data-form="base" novalidate>
+      <h1 class="title">Your starting weights</h1>
+      <p class="muted">${ST.hasEstimates(bl) ? 'Lifts you didn’t test are estimated from your body weight, your experience and how strong your other lifts are. ' : ''}Every other exercise gets a starting weight too, from how strong it usually is compared with these lifts. Each is a weight you could lift about two more times than the top of its rep range, so the first sets are never a max effort.</p>
+      <ul class="list">${rows.map((r) => `<li class="row">
+        <span class="row-main"><span class="row-title">${esc(r.name)}</span><span class="fine">${r.tested ? `Tested: ${esc(fLift(r.weight))} × ${r.reps}` : 'Estimated'}</span></span>
+        <span class="row-amount">1RM ${esc(fLift(r.oneRM))}<br><span class="fine">Start ${esc(fLift(r.start))}</span></span>
+      </li>`).join('')}</ul>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">${st.mode === 'baseline' ? 'Save' : 'Make my plan'}</button></div>
+    </form>
+  </section>`;
+}
+
+function captureBaseForm(strict) {
+  const st = ui.setup;
+  const b = st?.base;
+  const lifts = ST.testLifts(st?.draft?.equipment);
+  const l = b && lifts[b.i];
+  const form = document.querySelector('form[data-form="base"]');
+  if (!l || !form || !fe(form, 'bweight')) return true;
+  st.error = '';
+  const w = fval(form, 'bweight');
+  const r = fval(form, 'breps');
+  b.draft[l.id] = { w, r };
+  if (!strict) return true;
+  const v = parseNum(w);
+  const reps = Number(r);
+  const fail = (msg) => { st.error = msg; return false; };
+  if (v === null || v <= 0) return fail('Enter the weight you lifted.');
+  if (!Number.isInteger(reps) || reps < 1 || reps > ST.MAX_TEST_REPS) return fail('Choose how many reps you did, from 1 to 10.');
+  const kg = liftToKg(v, U().lift);
+  if (kg > 600) return fail('That weight looks too high. Check it.');
+  b.tested[l.id] = { weight: round(kg, 2), reps };
+  return true;
+}
+
 // ----- Today -----
 
 function demoBanner() {
@@ -458,6 +667,15 @@ function demoBanner() {
 function storageBanner() {
   if (PREVIEW) return S.demo ? '' : banner('<p>Preview: anything you enter stays in this browser only. The installed app keeps it on your phone.</p>');
   if (!isStorageOK()) return banner(`<p>${I.alert} This browser isn't letting Gainloop save. Leave private browsing, or your data will be lost when you close the page.</p>`, 'warn');
+  return '';
+}
+
+// A reminder about the PAR-Q+: a result that asks for more advice, one older than 12 months, or none yet
+function parqBanner(t) {
+  const q = S.parq;
+  if (!q) return banner('<p><strong>Health questionnaire.</strong> Answer the PAR-Q+ so Gainloop knows it is safe to train. It takes about a minute.</p><a class="btn btn-small" href="#parq">Start</a>', 'warn');
+  if (!PQ.validOn(q, t, daysBetween)) return banner(`<p><strong>Your PAR-Q+ is over 12 months old.</strong> It is only valid for 12 months, so answer it again.</p><a class="btn btn-small" href="#parq">Redo</a>`, 'warn');
+  if (q.level === 'seek') return banner('<p><strong>Get further advice before you push hard.</strong> Your PAR-Q+ answers say to see a qualified exercise professional or complete the ePARmed-X+ at <a class="link" href="https://www.eparmedx.com" target="_blank" rel="noopener">www.eparmedx.com</a>.</p><a class="btn btn-small" href="#parq">See result</a>', 'warn');
   return '';
 }
 
@@ -482,6 +700,8 @@ function todayView() {
     ? `<section class="banner banner-warn health-banner"><div><p><strong>Before you start</strong></p><ul class="notes">${r.checkFirst.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
         <div class="banner-actions"><button class="btn btn-small" data-act="health-ack">Got it</button><a class="link" href="#health">Health notes</a></div></section>`
     : '';
+
+  const parqCard = S.demo ? '' : parqBanner(t);
 
   const checkinCard = status.due
     ? `<section class="card card-tape">
@@ -539,6 +759,7 @@ function todayView() {
     </header>
     ${demoBanner()}${storageBanner()}
     ${healthCard}
+    ${parqCard}
     ${checkinCard}
     ${wellnessDueCard(t)}
     ${trackCardHTML(t)}
@@ -829,7 +1050,7 @@ function sessionView(sid) {
       const rx = wk.plan.rx.get(`${sid}:${i}`);
       const adv = rx
         ? { kg: rx.kg, text: rxText(rx, fLift) }
-        : advice(ex, hist, fLift, rr, w.stop, { load: w.mode === 'progress' ? 'progress' : 'hold' });
+        : advice(ex, hist, fLift, rr, w.stop, { load: w.mode === 'progress' ? 'progress' : 'hold', start: ex.load === 'kg' ? ST.startFor(S.baseline, ex.id) : null });
       const dr = draft[ex.id] || {};
       const weight = dr.kg ?? (adv.kg !== null && adv.kg !== undefined ? liftInputValue(adv.kg, U().lift) : last && ex.load === 'kg' ? liftInputValue(last.kg, U().lift) : '');
       const repsLabel = ex.load === 's' ? 'Seconds' : 'Reps';
@@ -1133,13 +1354,14 @@ function cardioSectionHTML() {
   const options = cardioExercises().filter((e) => !e.custom && e.eq.includes(S.profile.equipment) && !(S.myExercises || []).includes(e.id));
   return `<section class="section">
       <div class="section-head"><h2 class="h2">Cardio</h2><a class="link" href="#library-cardio">All cardio</a></div>
+      <p>Every session ends with ${fin.min} minutes of cardio at ${pace} pace${S.profile.goal === 'build' ? ', so it helps your heart and recovery without eating into your gains' : ''}.</p>
       ${extra.length ? `<h3 class="h3">Extra, to get back on track</h3>${extra.map(cardioDueHTML).join('')}` : ''}
       ${mineCardio.length ? `<ul class="list">${mineCardio.map((x) => {
         const ex = exerciseById(x.id);
         return `<li class="row"><button class="thumb-btn" data-act="guide" data-ex="${ex.id}" aria-label="How to do ${esc(ex.name)}">${thumb(ex.id)}</button>
           <span class="row-main"><span class="row-title">${esc(ex.name)}</span><span class="fine">${x.where.length ? `${fin.min} min at ${pace} pace, at the end of ${esc(andList(x.where))}` : esc(x.why)}</span></span>
           <button class="icon-btn" data-act="mine-toggle" data-id="${ex.id}" aria-label="Remove ${esc(ex.name)}">${I.close}</button></li>`;
-      }).join('')}</ul>` : `<p class="muted">Add the cardio you like. It goes at the end of two sessions a week, ${fin.min} minutes at ${pace} pace${S.profile.goal === 'build' ? ', so it helps your heart and recovery without eating into your gains' : ''}.</p>`}
+      }).join('')}</ul>` : `<p class="muted">Add the cardio you like and it takes the place of the walk or bike in your sessions.</p>`}
       ${options.length ? `<div class="add-chips">${options.map((e) => `<button class="chip-btn" data-act="mine-toggle" data-id="${e.id}">${I.plus}<span>${esc(e.name)}</span></button>`).join('')}</div>` : ''}
     </section>`;
 }
@@ -1306,6 +1528,20 @@ function rulesView() {
 
 // ----- You -----
 
+function parqSummary(q) {
+  if (!q) return 'Not done yet';
+  const when = fmtDate(q.d, 'day');
+  if (!PQ.validOn(q, today(), daysBetween)) return `Over 12 months old (${when}). Do it again`;
+  return `${{ clear: 'Cleared', ready: 'Ready to become more active', seek: 'Get further advice first' }[q.level] || 'Done'}, ${when}`;
+}
+
+function baselineSummary(b) {
+  if (!b) return 'Not tested yet';
+  const lifts = Object.values(b.lifts || {});
+  const n = lifts.filter((l) => l.tested).length;
+  return `${n} of ${lifts.length} lifts tested, ${fmtDate(b.d, 'day')}. Test again`;
+}
+
 function youView() {
   const p = S.profile;
   const t = today();
@@ -1320,7 +1556,10 @@ function youView() {
   return `<header class="screen-head"><h1 class="title">${p.name ? esc(p.name) : 'You'}</h1><a class="btn btn-small" href="#profile">Edit details</a></header>
     ${demoBanner()}
     <section class="section"><ul class="list">${rows.map(([k, v]) => `<li class="row"><span class="row-label">${k}</span><span class="row-main">${esc(v)}</span></li>`).join('')}
-      <li><a class="row row-link" href="#health"><span class="row-label">Health</span><span class="row-main">${esc(healthSummary(p.health))}</span>${I.next}</a></li></ul></section>
+      <li><a class="row row-link" href="#health"><span class="row-label">Health</span><span class="row-main">${esc(healthSummary(p.health))}</span>${I.next}</a></li>
+      <li><a class="row row-link" href="#parq"><span class="row-label">PAR-Q+</span><span class="row-main">${esc(parqSummary(S.parq))}</span>${I.next}</a></li>
+      <li><a class="row row-link" href="#baseline"><span class="row-label">Strength</span><span class="row-main">${esc(baselineSummary(S.baseline))}</span>${I.next}</a></li></ul></section>
+    ${S.baseline ? `<section class="section"><details class="how"><summary>Your starting lifts</summary><ul class="list">${ST.summary(S.baseline).map((r) => `<li class="row"><span class="row-main"><span class="row-title">${esc(r.name)}</span><span class="fine">${r.tested ? `Tested: ${esc(fLift(r.weight))} × ${r.reps}` : 'Estimated'}</span></span><span class="row-amount">1RM ${esc(fLift(r.oneRM))}</span></li>`).join('')}</ul></details></section>` : ''}
     <section class="section">
       <h2 class="h2">Units</h2>
       <fieldset class="field compact"><legend>Lengths</legend>${seg('pu-len', [['cm', 'cm'], ['in', 'inches']], U().len, 'units')}</fieldset>
@@ -1394,6 +1633,11 @@ function mathsView() {
       <h2 class="h2">Training</h2>
       <p>Weekly sets start at 10 to 14 per major muscle depending on experience, then get fitted to your days and session length.</p>
       <p>Every session has exactly ${MAX_EXERCISES} exercises, cardio included, and each exercise at most ${MAX_SETS} sets. A muscle gets one exercise in a session, or two when there’s room, such as a pull-down and a row for your back. Places go out in order of importance: your priorities first, then quads, chest and back, hamstrings and shoulders, then arms, calves, glutes and abs. If a session still has fewer than ${MAX_EXERCISES}, a muscle that is short of sets gets one, then a big exercise splits into two, so the session is always full. With very little equipment a session may borrow an exercise from another muscle.</p>
+      <h2 class="h2">Health questionnaire</h2>
+      <p>Setup includes the PAR-Q+ (2025), the Physical Activity Readiness Questionnaire for Everyone, written by the PAR-Q+ Collaboration. It is used in full and unchanged: seven general health questions, and follow-up questions about a medical condition only if you answer YES to one of them. No to all seven means you are cleared. A YES to a follow-up question means you should seek further advice, from an exercise professional or the ePARmed-X+ at www.eparmedx.com, before you push hard. That advice never blocks the app. Your clearance is valid for 12 months, and Gainloop asks again after that. Answers stay on your phone. A heart condition, high blood pressure or asthma answer also switches on those health rules in your plan.</p>
+      <h2 class="h2">Starting strength</h2>
+      <p>Your first weights come from a one rep max (1RM) on seven lifts: bench press, deadlift, squat, lat pulldown, seated row, shoulder press and calf raise (dumbbell versions if you train at home). For each, you lift a weight 1 to 10 times and the 1RM is worked out as weight ÷ (1.0278 − 0.0278 × reps), rounded to the nearest 2.5 kg. It is only trusted up to 10 reps, because the estimate drifts at higher reps.</p>
+      <p>Every other exercise gets a starting weight from how strong it usually is next to those lifts: a leg press is a bit over twice your squat, a dumbbell curl is about a fifth of your row, and so on. A lift you skip is estimated from your body weight, your experience and sex, then scaled by how strong your other lifts show you are, and kept 10% low. The starting weight is one you could lift about 2 more times than the top of the exercise’s rep range, rounded down to a weight that exists. After your first session, your own logged weights take over and the weekly load rules below apply.</p>
       <h2 class="h2">Weekly load</h2>
       <p>Load is weight lifted × reps × sets, added up over the week for three groups: legs (quads, hamstrings, glutes, calves and abs), push (chest, shoulders and triceps) and pull (back, biceps and forearms). Bodyweight exercises count as a share of your body weight, all of it for pull-ups, chin-ups and dips and about two thirds for the rest. Cardio and timed holds aren’t part of it.</p>
       <p>At the end of each week, Monday to Sunday, Gainloop adds up what you logged. If you logged only part of the plan, that week is scaled up to a full week, as long as you did at least half of it. The next week’s load for each group is then planned to be within ${round(MAX_CHANGE * 100)}% of that, up when you’re progressing and down when you’re deloading. If your plan has changed so much that last week no longer matches what you would repeat, the starting point is the last session of each exercise instead.</p>
@@ -1423,7 +1667,7 @@ function mathsView() {
       <p>Your meal plan counts as eaten unless you log something different: a meal you skipped, something else instead, or something extra. Each entry keeps what was planned and what you ate, so the difference stays right even if the plan changes later. The AI can estimate what something was, and you can change its numbers.</p>
       <p>When what you logged in the last week adds up to more than about 200 kcal either way, Gainloop offers to spread it over 3 days, a week or 2 weeks, starting tomorrow. The suggestion is the shortest that keeps each day within 10% of your usual calories. No day ever moves more than 15%, or below your calorie floor. Protein stays the same, and the change comes from carbs and fat (45% from carbs with diabetes, 60% otherwise). If you ate more than planned, up to 3 cardio sessions a week can cover up to half of it, so the food change is smaller. Anything a sensible change can’t cover is left to your check-ins, which adjust from your real weight. A short coach’s note is written by the AI from the plan, but the numbers are always worked out by the app.</p>
       <h2 class="h2">Cardio</h2>
-      <p>Cardio you add goes at the end of two sessions a week: 15 minutes at an easy pace while building muscle, 20 minutes for recomp and 25 for leaning out, moderate. Calories burned are estimated from the 2024 Adult Compendium of Physical Activities: the activity’s energy cost (MET) minus resting, times your weight and the time. With a sore knee, back or shoulder, running, jumping and rowing are flagged, and back-on-track cardio picks something easier on the joints. With a heart condition, cardio is kept easy to moderate.</p>
+      <p>Every session ends with 10 minutes of cardio, one of its 6 exercises: easy while building muscle, moderate for recomp and leaning out. Cardio you add yourself takes the place of the default walk or bike, in up to two sessions a week each. Calories burned are estimated from the 2024 Adult Compendium of Physical Activities: the activity’s energy cost (MET) minus resting, times your weight and the time. With a sore knee, back or shoulder, running, jumping and rowing are flagged, and back-on-track cardio picks something easier on the joints. With a heart condition, cardio is kept easy to moderate.</p>
       <h2 class="h2">Health conditions</h2>
       <p>These follow general guidance and are deliberately cautious. Your doctor’s or care team’s advice comes first.</p>
       <ul class="notes">
@@ -2007,6 +2251,8 @@ const VIEWS = {
   welcome: welcomeView,
   setup: () => setupView('new'),
   profile: () => setupView('edit'),
+  parq: () => setupView('parq'),
+  baseline: () => setupView('baseline'),
   today: todayView,
   body: bodyView,
   measure: measureView,
@@ -2036,7 +2282,7 @@ const TAB_OF = {
   today: 'today', checkin: 'today', ontrack: 'today', log: 'today', wellness: 'today', body: 'body', measure: 'body', frame: 'body', bodyfat: 'body',
   train: 'train', session: 'train', myex: 'train', library: 'train',
   eat: 'eat', shop: 'eat', mealnew: 'eat', rules: 'eat', pantry: 'eat',
-  you: 'you', profile: 'you', restore: 'you', changes: 'you', maths: 'you', health: 'you',
+  you: 'you', profile: 'you', parq: 'you', baseline: 'you', restore: 'you', changes: 'you', maths: 'you', health: 'you',
 };
 const TITLES = { today: 'Today', body: 'Body', train: 'Train', eat: 'Eat', you: 'You' };
 
@@ -2055,7 +2301,7 @@ function route() {
 function renderTabs(r) {
   const nav = document.getElementById('tabs');
   if (!nav) return;
-  const show = !!S.profile && !['setup', 'profile', 'welcome'].includes(r.name);
+  const show = !!S.profile && !['setup', 'profile', 'welcome', 'parq', 'baseline'].includes(r.name);
   nav.hidden = !show;
   document.body.classList.toggle('has-tabs', show);
   if (!show) return;
@@ -2074,7 +2320,7 @@ function render() {
   if (S.profile && closeWeeks(S, today())) save();
   if (r.name !== 'checkin') ui.checkin = null;
   if (r.name !== 'wellness') ui.wq = null;
-  if (r.name !== 'setup' && r.name !== 'profile') ui.setup = null;
+  if (!['setup', 'profile', 'parq', 'baseline'].includes(r.name)) ui.setup = null;
   view.innerHTML = VIEWS[r.name](r.param);
   renderTabs(r);
   document.body.dataset.route = r.name;
@@ -2281,13 +2527,50 @@ const ACTIONS = {
   },
   'sheet-close'() { closeSheet(); },
   'setup-back'() {
+    const st = ui.setup;
+    st.error = '';
+    if (st.phase === 'parq') {
+      if (st.parq.i > 0) st.parq.i -= 1;
+      else if (st.mode === 'new') { st.phase = 'details'; st.step = NEW_STEPS.length - 1; } else { location.hash = '#you'; return; }
+      captureParqForm();
+      render();
+      return;
+    }
+    if (st.phase === 'base') {
+      captureBaseForm(false);
+      if (st.base.i > -1) st.base.i -= 1;
+      else if (st.mode === 'new') { st.phase = 'parq'; st.parq.i = PQ.flow(st.parq.answers).list.length; } else { location.hash = '#you'; return; }
+      render();
+      return;
+    }
     const form = document.querySelector('form[data-form="setup"]');
     if (form) captureSetup(form, false);
-    ui.setup.error = '';
-    ui.setup.step = Math.max(0, ui.setup.step - 1);
+    st.step = Math.max(0, st.step - 1);
     render();
   },
-  'setup-skip'() { finishSetup(false); },
+  'parq-answer'(el) {
+    const st = ui.setup;
+    if (st?.phase !== 'parq') return;
+    st.parq.answers[el.dataset.q] = el.dataset.v;
+    st.parq.i += 1;
+    render();
+  },
+  'base-start'() { ui.setup.base.i = 0; render(); },
+  'base-skip'() {
+    const b = ui.setup.base;
+    const lifts = ST.testLifts(ui.setup.draft.equipment);
+    b.tested[lifts[b.i].id] = null;
+    b.w = ''; b.r = '';
+    b.i += 1;
+    ui.setup.error = '';
+    render();
+  },
+  'base-skip-all'() {
+    const b = ui.setup.base;
+    b.tested = {};
+    b.i = ST.testLifts(ui.setup.draft.equipment).length;
+    render();
+  },
   install() {
     const ev = ui.installEvent;
     if (!ev) return;
@@ -2691,6 +2974,11 @@ function useMeal(meal, di, slot, index) {
 }
 
 const CHANGES = {
+  'base-reps'(el) {
+    const form = el.closest('form');
+    const box = document.getElementById('base-preview');
+    if (box) box.innerHTML = basePreview(fval(form, 'bweight'), el.value);
+  },
   'units-setup'(el) {
     const form = el.closest('form');
     captureSetup(form, false);
@@ -2746,6 +3034,11 @@ const CHANGES = {
 };
 
 const LIVE = {
+  base(el) {
+    const form = el.closest('form');
+    const box = document.getElementById('base-preview');
+    if (box) box.innerHTML = basePreview(el.value, fval(form, 'breps'));
+  },
   measure(el) {
     const site = el.dataset.site;
     const warn = document.querySelector(`[data-warn-for="${site}"]`);
@@ -2811,8 +3104,60 @@ const FORMS = {
       render();
       return;
     }
-    if (st.mode === 'edit') finishEdit();
-    else finishSetup(true);
+    if (st.mode === 'edit') { finishEdit(); return; }
+    // the questionnaire comes after the details, then the lifts
+    st.phase = 'parq';
+    st.parq ||= newParq();
+    render();
+  },
+  parq(form) {
+    const st = ui.setup;
+    const p = st.parq;
+    if (!captureParqForm(true)) { render(); return; }
+    const t = today();
+    if (st.mode === 'parq') {
+      const before = { ...S.profile, health: normHealth(S.profile.health) };
+      S.parq = parqRecord(p, t);
+      const conds = PQ.conditionsFrom(p.answers);
+      S.profile = { ...S.profile, health: normHealth(withConditions(S.profile.health, conds)) };
+      const items = afterProfileChange(S, before, t);
+      ui.setup = null;
+      save();
+      location.hash = '#you';
+      toast(items.length ? 'Saved. Your plan has been updated.' : 'Questionnaire saved');
+      return;
+    }
+    if (ST.testLifts(st.draft.equipment).length) {
+      st.phase = 'base';
+      st.base ||= newBase();
+      st.base.i = -1;
+      render();
+      return;
+    }
+    finishSetup();
+  },
+  base(form) {
+    const st = ui.setup;
+    const b = st.base;
+    const lifts = ST.testLifts(st.draft.equipment);
+    if (b.i < lifts.length) {
+      if (!captureBaseForm(true)) { render(); return; }
+      b.i += 1;
+      render();
+      return;
+    }
+    // the summary
+    if (st.mode === 'baseline') {
+      const t = today();
+      S.baseline = ST.makeBaseline(b.tested, S.profile, st.draft.kg, t);
+      S.changes.push({ d: t, kind: 'edit', items: [{ area: 'training', text: 'Starting strength tested again', why: `${lifts.filter((l) => S.baseline.lifts[l.id].tested).length} of ${lifts.length} lifts tested. New starting weights apply to exercises you haven’t logged yet.` }] });
+      ui.setup = null;
+      save();
+      location.hash = '#you';
+      toast('Starting strength saved');
+      return;
+    }
+    finishSetup();
   },
   weigh(form) {
     const kg = readBodyWeight(form, 'weigh');

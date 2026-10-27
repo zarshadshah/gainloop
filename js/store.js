@@ -2,7 +2,7 @@
 import { addDays, isoDate, uid } from './util.js';
 import { blankHealth, normHealth } from './health.js';
 
-export const APP_VERSION = '1.4.0';
+export const APP_VERSION = '1.5.0';
 const KEY = 'gainloop.v1';
 
 export const blankState = () => ({
@@ -23,6 +23,8 @@ export const blankState = () => ({
   program: null,
   exLog: {},
   loads: [],
+  parq: null,
+  baseline: null,
   sessionsDone: [],
   drafts: {},
   mealWeek: null,
@@ -80,6 +82,7 @@ export function migrate(s) {
   out.pantry = { have: out.pantry.have, text: typeof out.pantry.text === 'string' ? out.pantry.text.slice(0, 600) : '', ai: out.pantry.ai && typeof out.pantry.ai === 'object' ? out.pantry.ai : null };
   out.myExercises = [...new Set(out.myExercises.map(renameEx))];
   out.swaps = Object.fromEntries(Object.entries(out.swaps).map(([k, v]) => [renameEx(k), renameEx(v)]));
+  for (const k of ['parq', 'baseline']) if (!out[k] || typeof out[k] !== 'object' || Array.isArray(out[k])) out[k] = null;
   if (out.profile) out.profile = { ...out.profile, health: normHealth(out.profile.health) };
   return out;
 }

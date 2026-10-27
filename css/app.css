@@ -702,3 +702,18 @@ select { width: 100%; min-height: 48px; padding: 10px 12px; border: 1px solid va
 .load-table > div { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 8px; padding: 7px 0; border-top: 1px solid var(--line); }
 .load-table > .load-head { border-top: 0; font-weight: 600; color: var(--muted); }
 .week-loads { margin: 0 0 14px; }
+
+/* PAR-Q+ and starting strength: one question or lift per screen */
+.parq-q { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; }
+.parq-sec { margin: 8px 0 0; color: var(--ink-3); font-size: 15px; font-weight: 600; }
+.parq-text { margin: 0; font-size: 28px; line-height: 1.15; overflow-wrap: anywhere; }
+.yn { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+.yn-btn { min-height: 68px; font-size: 22px; font-weight: 600; }
+.yn-btn.on { background: var(--btn-bg); color: var(--btn-fg); border-color: var(--btn-bg); }
+.parq-credit { margin-top: 24px; }
+.parq .notes li, .parq p { overflow-wrap: anywhere; }
+.parq textarea { width: 100%; }
+.formula { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--sunk); font-variant-numeric: tabular-nums; font-weight: 600; overflow-wrap: anywhere; }
+.base .row-amount { text-align: right; white-space: normal; }
+.parq .link { white-space: normal; overflow-wrap: anywhere; }
+.parq-title { margin: 0; font-size: 18px; }
