@@ -5,7 +5,8 @@ import { exerciseById, muscleName, setCustomExercises } from './data/exercises.j
 import { healthRules, normHealth } from './health.js';
 import { filterMeals, planWeek, rescaleDay } from './meals.js';
 import { SITE_REASON, buildProgram } from './plan.js';
-import { addDays, fmtInt, mondayOf, rng, round } from './util.js';
+import { addDays, clamp, fmtInt, mondayOf, rng, round } from './util.js';
+import { countsInLoad } from './load.js';
 import { demoState } from './store.js';
 import { dayTargets } from './track.js';
 import { BANDS, MAX_SCORE, addWellness, lastSunday, weekSettings, weekSummary } from './wellness.js';
@@ -249,6 +250,27 @@ export function seedDemo(today, seed = DEMO.seed) {
     }
     if (checkin) applyCheckin(s, d, analyseCheckin(s, d)); // measured during the check-in
   }
+  // Three weeks of lifting that match the plan (the same exercises and sets), so the weekly loads have a start
+  const known = s.exLog;
+  s.exLog = {};
+  for (const sess of s.program.sessions) {
+    for (const sl of sess.slots) {
+      const ex = exerciseById(sl.ex);
+      if (!countsInLoad(ex) || ex.load === 's' || s.exLog[ex.id]) continue;
+      const lift = known[ex.id];
+      const step = ex.step || 2.5;
+      const lifted = ex.load === 'kg' ? (lift?.[lift.length - 1]?.kg || Math.max(step, Math.round((ex.k === 'c' ? 30 : 15) / step) * step)) : null;
+      const [lo, hi] = ex.rr;
+      s.exLog[ex.id] = [17, 10, 3].map((back, k) => ({
+        d: addDays(today, -back),
+        kg: lifted === null ? null : Math.max(step, lifted - (2 - k) * step),
+        reps: Array.from({ length: sl.sets }, (_, j) => clamp(Math.round(lo + (hi - lo) * (0.35 + 0.2 * k) - (j > 0 ? j * 0.5 : 0)), lo, hi)),
+      }));
+    }
+  }
+  // exercises you know that are not in the plan stay available for swaps
+  for (const [id, log] of Object.entries(known)) if (!s.exLog[id]) s.exLog[id] = log;
+
   // Six Sunday wellness checks: steady weeks, then a tired and sore one, so this week's sessions are lighter
   const answers = [[3, 4, 3, 3, 4], [4, 4, 3, 3, 4], [3, 3, 3, 3, 4], [4, 4, 3, 4, 4], [3, 4, 3, 3, 4], [2, 3, 2, 3, 4]];
   answers.forEach(([fatigue, sleep, soreness, stress, mood], i) => {

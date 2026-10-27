@@ -1,12 +1,13 @@
 // Weekly wellness check: five questions on fatigue, sleep, soreness, stress and mood, scored 1 to 5
-// (5 is best), best answered on Sunday morning. The total, compared with your own normal, sets how hard
-// the coming week's sessions are: sets, how close to failure, weights and which exercises. No DOM here.
+// (5 is best), best answered on Sunday morning. The total, compared with your own normal, decides whether
+// the coming week's training load goes up or down (never by more than 5%, see load.js), how close to
+// failure you work, and whether a sore muscle swaps an exercise. Every session keeps its 6 exercises. No DOM here.
 //
 // Based on the athlete wellness questionnaire of McLean and colleagues (2010). Deload changes follow the
-// Delphi consensus of Bell and colleagues (2023): fewer sets, further from failure, familiar main lifts
-// kept and accessory work dropped.
+// Delphi consensus of Bell and colleagues (2023): less load, further from failure, familiar lifts kept.
 import { exerciseById, isCardio } from './data/exercises.js';
-import { MAX_EXERCISES, MAX_SETS, eligible, estimateMinutes } from './plan.js';
+import { eligible, estimateMinutes } from './plan.js';
+import { MAX_CHANGE, loadDelta } from './load.js';
 import { addDays, clamp, daysBetween, round, uid, weekdayIndex } from './util.js';
 
 // Options run from 1 (worst) to 5 (best), in the wording of the original sheet
@@ -128,25 +129,23 @@ export function weekSettings(entry, profile, rules) {
   const lean = profile?.goal === 'lean';
   const s = {
     band,
-    sets: { fresh: 1, normal: 0, tired: -1, lighter: 'lighter' }[band],
-    extra: band === 'fresh' && !lean, // one more set on your main or priority lifts
-    maxEx: { fresh: MAX_EXERCISES, normal: MAX_EXERCISES, tired: MAX_EXERCISES - 1, lighter: MAX_EXERCISES - 2 }[band],
+    // how far from failure to stop each set
     rir: { fresh: [1, 1], normal: [1, 2], tired: [2, 3], lighter: [3, 4] }[band],
-    load: { fresh: 'progress', normal: 'progress', tired: 'hold', lighter: 'lighter' }[band],
-    // leaning out: keep the weights heavy to hold on to muscle, and take the rest from sets and reps
-    pct: band === 'lighter' && !lean ? 0.1 : 0,
     sore: a.soreness <= 2,
     poorSleep: a.sleep <= 2,
     stressed: a.stress <= 2,
+    hold: false,
+    lean,
     cardioEasy: band === 'tired' || band === 'lighter',
   };
   if (band === 'fresh' && profile?.experience === 'beginner') s.rir = [1, 2];
-  // sleep and stress both slow recovery: no weight increases and a little further from failure
-  if ((s.poorSleep || s.stressed) && s.load === 'progress') {
-    s.load = 'hold';
-    s.extra = false;
+  // sleep and stress both slow recovery: no increase in load and a little further from failure
+  if ((s.poorSleep || s.stressed) && loadDelta(band, { lean }) > 0) {
+    s.hold = true;
     s.rir = [Math.max(s.rir[0], 2), Math.max(s.rir[1], 3)];
   }
+  s.delta = loadDelta(band, { lean, hold: s.hold });
+  s.mode = s.delta > 0 ? 'progress' : s.delta < 0 ? 'deload' : 'hold';
   // never closer to failure than your health rules allow
   const h = healthRir(rules?.stopShort);
   s.rir = [Math.max(s.rir[0], h[0]), Math.max(s.rir[1], h[1])];
@@ -154,22 +153,23 @@ export function weekSettings(entry, profile, rules) {
   return s;
 }
 
+const pctText = (d) => `${round(Math.abs(d) * 100, 1)}%`;
+
 // The week's changes in plain words, for the results screen and the Train tab
 export function weekSummary(settings, profile) {
   const w = settings;
   const out = [];
-  if (w.band === 'fresh') out.push(w.extra ? 'One extra set on two exercises in each session: your priority lifts first, or else the first lifts of the session.' : 'Sets stay as planned: leaning out, recovery is limited, so extra sets aren’t added.');
-  if (w.band === 'tired') out.push('One set fewer on each exercise.');
-  if (w.band === 'lighter') out.push('About 40% fewer sets, two or three on each exercise.');
-  if (w.maxEx < MAX_EXERCISES) out.push(w.band === 'lighter' ? `At most ${w.maxEx} exercises a session: your main lifts and easy cardio stay, and accessory work like arm, calf and ab exercises is left out.` : `At most ${w.maxEx} exercises a session: your main lifts stay and the last accessory exercise is left out.`);
-  out.push(`Stop each set ${w.stop} reps before you’d fail.`);
-  if (w.load === 'progress') out.push('Go up in weight wherever you hit the top of the rep range on every set last time.');
-  if (w.load === 'hold') {
-    const because = w.band === 'tired' ? '' : w.poorSleep && w.stressed ? ' Poor sleep and stress both slow recovery.' : w.poorSleep ? ' Poor sleep slows recovery.' : ' Stress slows recovery.';
-    out.push(`Same weights as last time, no increases this week.${because}`);
+  const limit = `${pctText(MAX_CHANGE)}`;
+  if (w.mode === 'progress') out.push(`Your load goes up by about ${pctText(w.delta)} on last week’s, for legs, push and pull. It never moves more than ${limit} either way.`);
+  if (w.mode === 'hold') {
+    const because = w.poorSleep && w.stressed ? ' Poor sleep and stress both slow recovery.' : w.poorSleep ? ' Poor sleep slows recovery.' : w.stressed ? ' Stress slows recovery.' : '';
+    out.push(`Your load stays the same as last week’s, for legs, push and pull.${because}`);
   }
-  if (w.load === 'lighter') out.push(w.pct ? `Weights about ${Math.round(w.pct * 100)}% lighter than last time.` : 'Same weights as last time, with fewer reps: leaning out, heavy weights help you keep your muscle.');
-  if (w.sore) out.push('Your muscles are sore, so exercises that load a muscle at full stretch, like Romanian deadlifts, get one set fewer, or swap for one you already know.');
+  if (w.mode === 'deload') out.push(`Your load comes down by about ${pctText(w.delta)} from last week’s, for legs, push and pull. It never moves more than ${limit} either way.`);
+  out.push('Every session keeps its 6 exercises and the same number of sets. The reps change first, and the weights only when the reps can’t.');
+  out.push(`Stop each set ${w.stop} reps before you’d fail.`);
+  if (w.mode === 'deload' && w.lean) out.push('Leaning out, the weights stay where they can and the reps come down: heavy weights help you keep your muscle.');
+  if (w.sore) out.push('Your muscles are sore, so exercises that load a muscle at full stretch, like Romanian deadlifts, swap for one you already know and do a lot, if there is one.');
   if (w.cardioEasy) out.push('Cardio at an easy pace.');
   if (profile?.goal === 'lean' && w.band === 'lighter') out.push('Your calories don’t change: a lighter week is about recovery, not eating less.');
   return out;
@@ -196,53 +196,24 @@ export const STRETCH = {
   'db-oh-ext': ['pushdown', 'diamond-push-up', 'bench-dip'],
 };
 
-// Exercises you know: in your plan, on your list, or logged in the last 12 weeks
+// Exercises you have logged in the last 12 weeks. A swapped-in exercise needs a history, so its weight
+// and reps can be worked out from what you did.
 export function familiarSet(state, t) {
-  const set = new Set([...(state.myExercises || []), ...(state.program?.sessions || []).flatMap((s) => s.slots.map((sl) => sl.ex))]);
-  for (const [id, log] of Object.entries(state.exLog || {})) if ((log || []).some((h) => daysBetween(h.d, t) <= 84)) set.add(id);
+  const set = new Set();
+  for (const [id, log] of Object.entries(state.exLog || {})) if ((log || []).some((h) => h.reps?.length && daysBetween(h.d, t) <= 84)) set.add(id);
   return set;
 }
 
-// Order exercises are left out in when a session has to be shorter: abs first, then other isolation
-// accessories (from the end of the session), then priority isolation work, and only then the last compound
-// lifts. Easy cardio stays, as it helps recovery. The first lifts and your priority compounds always stay.
-function dropRank(sl) {
-  const ex = exerciseById(sl.ex);
-  if (sl.cardio) return 7;
-  if (sl.m === 'abs' && !sl.priority) return 0;
-  if (ex?.k === 'i') return sl.priority ? 3 : 1;
-  return sl.priority ? 9 : 8;
-}
-
 // This week's version of one session. ctx: { profile, rules, familiar (Set), keep (ids you chose to keep) }
+// The session keeps all its exercises and sets: the load plan (load.js) changes the reps and weights. The
+// one change here is for sore muscles: a stretch-heavy exercise swaps for a gentler one you already know.
 export function adjustSession(session, w, ctx = {}) {
   const keep = new Set(ctx.keep || []);
   const avoid = ctx.rules?.avoid || new Set();
   const used = new Set(session.slots.map((sl) => sl.ex));
-  // 1. the shorter session: leave out exercises until it fits
-  let slots = session.slots.map((sl, i) => ({ ...sl, i }));
-  const dropped = [];
-  // between two equal choices, leave out the one whose muscle is still trained elsewhere this week
-  const covered = (x) => (slots.some((y) => y !== x && y.m === x.m) || (ctx.elsewhere ? ctx.elsewhere(x.m) > 0 : false) ? 1 : 0);
-  while (slots.length > w.maxEx) {
-    const cands = [...slots].sort((a, b) => dropRank(a) - dropRank(b) || covered(b) - covered(a) || b.i - a.i);
-    const out = cands[0];
-    if (dropRank(out) >= 9) break; // never a priority compound lift
-    dropped.push(out);
-    slots = slots.filter((x) => x !== out);
-  }
-  // the extra set on a fresh week goes to two lifts a session: priority lifts first, then the first lifts
-  const lifts = slots.filter((x) => !x.cardio && (x.sets || 0) < MAX_SETS);
-  const extraFor = new Set([...lifts.filter((x) => x.priority), ...lifts.filter((x) => !x.priority)].slice(0, 2).map((x) => x.i));
-  slots = slots.map((sl) => {
-    const ex = exerciseById(sl.ex);
-    if (sl.cardio || isCardio(ex)) return { ...sl, effort: w.cardioEasy ? 'easy' : sl.effort, planned: sl };
-    let sets = sl.sets;
-    if (w.sets === 'lighter') sets = Math.max(2, Math.round(sl.sets * 0.6));
-    else if (w.sets < 0) sets = Math.max(2, sl.sets + w.sets);
-    else if (w.extra && extraFor.has(sl.i)) sets = Math.min(MAX_SETS, sl.sets + 1);
-    const out = { ...sl, sets, planned: sl };
-    // 2. sore: a stretch-heavy exercise swaps for a gentler one you know, or loses a set
+  const slots = session.slots.map((sl, i) => {
+    const out = { ...sl, i, planned: sl };
+    if (sl.cardio || isCardio(exerciseById(sl.ex))) return { ...out, effort: w.cardioEasy ? 'easy' : sl.effort };
     if (w.sore && STRETCH[sl.ex] && !keep.has(sl.ex)) {
       const alt = STRETCH[sl.ex].map((id) => exerciseById(id)).find((e) => e && e.m === sl.m && !used.has(e.id) && !avoid.has(e.id)
         && ctx.familiar?.has(e.id) && (!ctx.profile || e.custom || eligible(e, ctx.profile)));
@@ -250,36 +221,19 @@ export function adjustSession(session, w, ctx = {}) {
         used.add(alt.id);
         return { ...out, ex: alt.id, base: sl.ex, swapWhy: 'sore' };
       }
-      out.sets = Math.max(2, out.sets - 1);
-      out.soreCut = true;
     }
     return out;
   });
   const sets = slots.reduce((t, x) => t + (x.sets || 0), 0);
   const minutes = estimateMinutes(sets) + slots.reduce((t, x) => t + (x.min || 0), 0);
-  return { ...session, slots, dropped, sets, minutes };
+  return { ...session, slots, sets, minutes };
 }
 
-// The whole week at once, in session order, so a muscle left out of one session keeps its place in another
+// The whole week at once, in session order
 export function adjustWeek(program, w, ctx = {}) {
   const out = new Map();
-  const kept = new Map();
-  const sessions = program?.sessions || [];
-  sessions.forEach((s, idx) => {
-    const later = sessions.slice(idx + 1);
-    const elsewhere = (m) => (kept.get(m) || 0) + later.filter((t) => t.slots.some((x) => x.m === m && !x.cardio)).length;
-    const a = adjustSession(s, w, { ...ctx, elsewhere });
-    for (const m of new Set(a.slots.filter((x) => !x.cardio).map((x) => x.m))) kept.set(m, (kept.get(m) || 0) + 1);
-    out.set(s.id, a);
-  });
+  for (const s of program?.sessions || []) out.set(s.id, adjustSession(s, w, ctx));
   return out;
-}
-
-// Reps aimed for in a lighter week: the bottom half of the range
-export function weekRange(rr, w) {
-  if (w?.band !== 'lighter' || !rr) return rr;
-  const [lo, hi] = rr;
-  return [lo, Math.max(lo, Math.round((lo + hi) / 2))];
 }
 
 // Two weeks in a row of very low sleep, stress or mood scores: worth a word with someone

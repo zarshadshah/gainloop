@@ -15,7 +15,8 @@ import { applySwap, dayTotals, mealLines, mealMacros, needsHalalNote, pantryLine
 import { afterBodyChange, afterProfileChange, allowedMeals, analyseCheckin, applyCheckin, dietOf, ensureCurrentWeek, mealsById, refreshMeals, refreshProgram, rescaleMeals, rulesOf, seedDemo, startState, targetsFor, weekDate, wellnessChangeItems } from './engine.js';
 import { LOOKBACK, SLOT_SHARE, addLogItem, adjustmentProgress, applyCatchUp, cardioOffer, cardioToDo, catchUpOptions, dayTargets, diffOf, leaveGap, logFor, loggedMeal, markCardio, pendingGap, pruneLog, removeLogItem, stopAdjustment } from './track.js';
 import { AIError, aiMeal, aiRules, callAI, estimateTotal, slotTargets } from './ai.js';
-import { BANDS, MAX_SCORE, QUESTIONS, activeEntry, addWellness, adjustSession, adjustWeek, assess, familiarSet, history as wellnessHistory, isComplete, totalOf, weekRange, weekSettings, weekSummary, wellbeingNote, wellnessDue } from './wellness.js';
+import { BANDS, MAX_SCORE, QUESTIONS, activeEntry, addWellness, adjustWeek, assess, familiarSet, history as wellnessHistory, isComplete, totalOf, weekSettings, weekSummary, wellbeingNote, wellnessDue } from './wellness.js';
+import { LOAD_GROUPS, MAX_CHANGE, closeWeeks, groupOf, planWeek, rxText, weekSoFar } from './load.js';
 import { APP_VERSION, blankState, clearSaved, exportText, isStorageOK, loadState, parseBackup, saveState } from './store.js';
 import { drawWeightChart, tapeHTML } from './charts.js';
 
@@ -720,16 +721,29 @@ function trainView() {
   const trainHealth = healthFor('train');
 
   const wk = weekNow();
-  const weekBox = wk.entry
-    ? `<section class="section week-box week-${wk.w.band}">
-        <div class="section-head"><h2 class="h2">This week</h2><a class="link" href="#wellness">Your answers</a></div>
-        <p><strong>${esc(BANDS[wk.w.band].name)}</strong>, ${wk.entry.total} of ${MAX_SCORE} in your wellness check on ${fmtDate(wk.entry.d, 'day')}.</p>
-        <ul class="notes">${weekSummary(wk.w, p).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
-      </section>`
-    : `<section class="section week-box">
-        <h2 class="h2">This week</h2>
-        <p>Answer the weekly wellness check and your sessions adjust to how you feel: sets, effort, weights and which exercises.</p>
-        <a class="btn" href="#wellness-answer">Answer 5 questions</a>
+  const sofar = weekSoFar(S, today());
+  const pastLoads = [...(S.loads || [])].reverse().slice(0, 6);
+  const loadRows = LOAD_GROUPS.map((g) => {
+    const info = wk.plan.groups[g.id];
+    const detail = info.base === null
+      ? 'Your first full week of training sets the starting load.'
+      : `Last week ${fLoad(info.base)}. This week ${fLoad(info.planned)} (${pctSigned(info.pct)}).`;
+    return `<li class="row load-row"><span class="row-main"><span class="row-title">${g.name}</span><span class="fine">${esc(detail)}</span></span><span class="load-so-far"><strong>${fLoad(sofar[g.id])}</strong><span class="fine">so far</span></span></li>`;
+  }).join('');
+  const weekBox = `<section class="section week-box${wk.entry ? ` week-${wk.w.band}` : ''}">
+        <div class="section-head"><h2 class="h2">This week</h2>${wk.entry ? '<a class="link" href="#wellness">Your answers</a>' : ''}</div>
+        ${wk.entry
+    ? `<p><strong>${esc(BANDS[wk.w.band].name)}</strong>, ${wk.entry.total} of ${MAX_SCORE} in your wellness check on ${fmtDate(wk.entry.d, 'day')}.</p>
+           <ul class="notes">${weekSummary(wk.w, p).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`
+    : `<p>Answer the weekly wellness check and your load goes up or down to match how you feel.</p>
+           <a class="btn" href="#wellness-answer">Answer 5 questions</a>`}
+        <h3 class="h3">Weekly load</h3>
+        <p class="fine">Weight × reps × sets, added up for legs (with abs), push and pull. Worked out at the end of each week, and each week stays within ${round(MAX_CHANGE * 100)}% of the one before.</p>
+        <ul class="list">${loadRows}</ul>
+        ${pastLoads.length ? `<details class="note"><summary>Past weeks</summary><div class="load-table" role="table" aria-label="Load for each past week">
+          <div class="load-head" role="row"><span role="columnheader">Week of</span>${LOAD_GROUPS.map((g) => `<span role="columnheader">${g.name}</span>`).join('')}</div>
+          ${pastLoads.map((rec) => `<div role="row"><span role="cell">${fmtDate(rec.ws, 'day')}</span>${LOAD_GROUPS.map((g) => `<span role="cell">${rec[g.id]?.n ? fLoad(rec[g.id].load) : '–'}</span>`).join('')}</div>`).join('')}
+        </div></details>` : ''}
       </section>`;
 
   return `<header class="screen-head"><div><h1 class="title">Train</h1><p class="muted">${esc(prog.split)}, ${p.days} days a week, ${eqName}</p></div></header>
@@ -744,7 +758,7 @@ function trainView() {
           <span class="row-main"><span class="row-title">${esc(s.name)}${s.id === nextId ? ' <span class="badge badge-ink">Next</span>' : ''}</span>
           <span class="fine">${plural(ws.slots.length, 'exercise')}, about ${ws.minutes} min${ld ? `, last done ${relDays(ld.d, today())}` : ''}</span></span>${I.next}</a></li>`;
       }).join('')}</ul>
-      <p class="fine">Every session has at most ${MAX_EXERCISES} exercises, cardio included.</p>
+      <p class="fine">Every session has exactly ${MAX_EXERCISES} exercises, cardio included.</p>
     </section>
     ${r.train.length ? `<section class="section">
       <div class="section-head"><h2 class="h2">Training safely</h2><a class="link" href="#health">Health</a></div>
@@ -785,8 +799,8 @@ function trainView() {
     </section>
     <section class="section">
       <h2 class="h2">How progress works</h2>
-      <p>Each exercise has a rep range. Stay at a weight until you hit the top of the range on every set, then go up. If you fall below the bottom twice, drop about 10%. Stop each set ${wk.w.stop} reps before you'd fail${wk.entry ? ' this week' : ''}.</p>
-      <p class="muted">Your weekly wellness check moves this up or down: a fresh week adds a set to your main lifts, a tired week takes a set off and holds your weights, and a lighter week cuts sets and weights to let you recover.</p>
+      <p>Each exercise has a rep range. Your load for the week is last week’s, up a little when you’re progressing and down a little when you’re deloading, never by more than ${round(MAX_CHANGE * 100)}%. It comes first from one or two more reps on your exercises, and once you reach the top of the range, from a heavier weight and fewer reps. Stop each set ${wk.w.stop} reps before you'd fail${wk.entry ? ' this week' : ''}.</p>
+      <p class="muted">Your weekly wellness check decides which way it goes: a fresh week adds up to ${round(MAX_CHANGE * 100)}%, a normal week adds half that, a tired week takes off half that, and a lighter week takes off ${round(MAX_CHANGE * 100)}%. Poor sleep or stress holds it where it is.</p>
     </section>`;
 }
 
@@ -802,7 +816,8 @@ function sessionView(sid) {
   const ws = weekSession(s, wk);
   return `${backLink('#train', 'Train')}
     <header class="screen-head"><div><h1 class="title">${esc(s.name)}</h1><p class="muted">${plural(ws.slots.length, 'exercise')}, about ${ws.minutes} min</p></div></header>
-    ${wk.entry && (w.band !== 'normal' || w.load === 'hold') ? `<p class="note week-note-top"><a class="link" href="#wellness">${esc(BANDS[w.band].name)}</a>: ${esc(weekShort(w))}. Stop each set ${esc(w.stop)} reps before you’d fail.</p>` : ''}
+    ${wk.entry ? `<p class="note week-note-top"><a class="link" href="#wellness">${esc(BANDS[w.band].name)}</a>: ${esc(weekShort(w))}. Stop each set ${esc(w.stop)} reps before you’d fail.</p>` : ''}
+    <ul class="notes week-loads">${[...new Set(ws.slots.map((sl) => groupOf(exerciseById(sl.ex))).filter(Boolean))].map((g) => `<li>${esc(loadLine(wk.plan.groups[g]))}</li>`).join('')}</ul>
     ${r.train.length ? `<details class="note session-notes"${S.sessionsDone.length ? '' : ' open'}><summary>Safety notes for your health</summary><ul class="notes">${r.train.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
     ${ws.slots.map((sl, i) => {
       const ex = exerciseById(sl.ex);
@@ -810,38 +825,39 @@ function sessionView(sid) {
       if (sl.cardio || isCardio(ex)) return cardioSlotHTML(sid, sl, ex, i, draft[ex.id] || {});
       const hist = (S.exLog[ex.id] || []).filter((h) => h.d < t);
       const last = hist[hist.length - 1];
-      const rr = weekRange(repRange(ex, r), w);
-      const adv = advice(ex, hist, fLift, rr, w.stop, { load: w.load, pct: w.pct });
+      const rr = repRange(ex, r);
+      const rx = wk.plan.rx.get(`${sid}:${i}`);
+      const adv = rx
+        ? { kg: rx.kg, text: rxText(rx, fLift) }
+        : advice(ex, hist, fLift, rr, w.stop, { load: w.mode === 'progress' ? 'progress' : 'hold' });
       const dr = draft[ex.id] || {};
       const weight = dr.kg ?? (adv.kg !== null && adv.kg !== undefined ? liftInputValue(adv.kg, U().lift) : last && ex.load === 'kg' ? liftInputValue(last.kg, U().lift) : '');
       const repsLabel = ex.load === 's' ? 'Seconds' : 'Reps';
       const sore = soreFor(ex.id);
       const base = sl.base ? exerciseById(sl.base) : null;
-      const planned = sl.planned?.sets;
       return `<article class="exercise${sl.priority ? ' is-priority' : ''}" data-ex="${ex.id}">
         <header class="ex-head">
           <div class="ex-title">
             <h2 class="h3">${esc(ex.name)}${sl.mine && !base ? ' <span class="badge badge-line">You do this</span>' : ''}</h2>
-            <p class="fine">${muscleName(sl.m)}${sl.priority ? ' (priority)' : ''}, ${sl.sets} sets of ${repText(ex, rr)}${planned && planned !== sl.sets ? ` (usually ${planned})` : ''}, ${restText(ex)}</p>
+            <p class="fine">${muscleName(sl.m)}${sl.priority ? ' (priority)' : ''}, ${sl.sets} sets of ${repText(ex, rr)}, ${restText(ex)}</p>
           </div>
           <button class="icon-btn" data-act="swap" data-sid="${sid}" data-ex="${base ? base.id : ex.id}" aria-label="Swap ${esc(base ? base.name : ex.name)}">${I.swap}</button>
         </header>
         ${base ? `<p class="week-note">This week instead of ${esc(lcFirst(base.name))}. Your muscles are sore, and that one works them at full stretch, which is hardest on sore muscles. You already know this one, so it won’t add soreness of its own. <button class="btn-link" data-act="wellness-keep" data-ex="${base.id}">Do ${esc(lcFirst(base.name))} anyway</button></p>` : ''}
-        ${sl.soreCut ? '<p class="week-note">One set fewer: this one loads the muscle at full stretch, which is hardest on sore muscles.</p>' : ''}
         <button class="ex-guide" data-act="guide" data-ex="${ex.id}">${thumb(ex.id)}<span class="ex-guide-text"><span>How to do it</span><span class="fine">${GUIDES[ex.id] ? esc(kitText(ex.id)) : 'Steps and a video link'}</span></span></button>
         ${sore.length ? `<p class="warn">${I.alert} ${sl.mine ? 'This one stays because you already do it.' : Object.values(S.swaps).includes(ex.id) ? 'You swapped this one in.' : 'Nothing else fits your equipment here.'} Go lighter if your ${esc(andList(sore))} ${hurtVerb(sore)}, or swap it.</p>` : ''}
         <p class="advice">${esc(adv.text)}</p>
+        ${rx ? `<p class="fine">Load ${fLoad(rx.load)}, last ${rx.last.recent ? 'week' : 'time'} ${fLoad(rx.last.load)}</p>` : ''}
         ${last ? `<p class="fine">Last time, ${fmtDate(last.d, 'day')}: ${ex.load === 'kg' ? `${last.kg ? fLift(last.kg) : 'bodyweight'} × ` : ''}${last.reps.join(', ')}${ex.load === 's' ? ' s' : ''}</p>` : ''}
         <div class="log">
           ${ex.load === 'kg' ? `<div class="log-weight"><label for="w-${i}">Weight</label>${numBox(`w-${i}`, weight, liftUnit(), { small: true, live: 'set', data: ` data-sid="${sid}" data-ex="${ex.id}" data-field="kg"` })}</div>` : ''}
           <div class="log-reps"><span class="log-label" id="rl-${i}">${repsLabel}</span>
-            <div class="rep-boxes" role="group" aria-labelledby="rl-${i}">${Array.from({ length: sl.sets }, (_, k) => `<input class="rep" inputmode="numeric" aria-label="Set ${k + 1} ${repsLabel.toLowerCase()}" value="${esc(dr.reps?.[k] ?? '')}" data-live="set" data-sid="${sid}" data-ex="${ex.id}" data-field="rep" data-k="${k}">`).join('')}</div>
+            <div class="rep-boxes" role="group" aria-labelledby="rl-${i}">${Array.from({ length: sl.sets }, (_, k) => `<input class="rep" inputmode="numeric" aria-label="Set ${k + 1} ${repsLabel.toLowerCase()}" placeholder="${rx?.reps[k] ?? ''}" value="${esc(dr.reps?.[k] ?? '')}" data-live="set" data-sid="${sid}" data-ex="${ex.id}" data-field="rep" data-k="${k}">`).join('')}</div>
           </div>
         </div>
         ${adv.nextEx ? `<button class="btn btn-small" data-act="swap-to" data-from="${ex.id}" data-to="${adv.nextEx}">Switch to ${esc(lcFirst(exerciseById(adv.nextEx).name))}</button>` : ''}
       </article>`;
     }).join('')}
-    ${ws.dropped.length ? `<p class="fine week-dropped">Left out this week: ${esc(andList(ws.dropped.map((x) => lcFirst(exerciseById(x.ex)?.name || ''))))}. ${w.band === 'lighter' ? 'A lighter week keeps your main lifts and drops accessory work.' : 'One exercise fewer while you’re tired.'} They’re back when you feel better.</p>` : ''}
     <div class="finish-bar"><button class="btn btn-primary btn-wide" data-act="finish" data-sid="${sid}">Finish workout</button></div>`;
 }
 
@@ -1376,19 +1392,23 @@ function mathsView() {
       <p>Your starting point is the Mifflin-St Jeor equation, adjusted for your daily activity and training days. Building muscle adds 150 to 300 kcal, recomp stays at maintenance and leaning out takes off up to 20%. Calories never go below your resting burn or 1,600 kcal for men and 1,400 for women.</p>
       <p>Every two weeks, a check-in compares how fast your 7-day average weight is moving with the target pace: about 1.25% of body weight a month for newer lifters, 0.75% with some experience and 0.4% when experienced. The first change waits until you have about 3 weeks of weigh-ins. If you're more than 0.1 kg a week off pace (or a third of the target pace, if that's bigger), calories move by half the gap, at most 250 kcal at a time. If weight is on pace but your waist is growing while arms and chest aren't, calories come down 100.</p>
       <h2 class="h2">Training</h2>
-      <p>Weekly sets start at 10 to 14 per major muscle depending on experience, then get fitted to your days and session length. Progress uses double progression: stay at a weight until you reach the top of the rep range on every set, then go up.</p>
-      <p>Every session has at most ${MAX_EXERCISES} exercises, cardio included, and each exercise at most ${MAX_SETS} sets. A muscle gets one exercise in a session, or two when there’s room, such as a pull-down and a row for your back. Places go out in order of importance: your priorities first, then quads, chest and back, hamstrings and shoulders, then arms, calves, glutes and abs. When the sessions are full, the last of these move to another day or rely on the big lifts, and the Train tab says so.</p>
+      <p>Weekly sets start at 10 to 14 per major muscle depending on experience, then get fitted to your days and session length.</p>
+      <p>Every session has exactly ${MAX_EXERCISES} exercises, cardio included, and each exercise at most ${MAX_SETS} sets. A muscle gets one exercise in a session, or two when there’s room, such as a pull-down and a row for your back. Places go out in order of importance: your priorities first, then quads, chest and back, hamstrings and shoulders, then arms, calves, glutes and abs. If a session still has fewer than ${MAX_EXERCISES}, a muscle that is short of sets gets one, then a big exercise splits into two, so the session is always full. With very little equipment a session may borrow an exercise from another muscle.</p>
+      <h2 class="h2">Weekly load</h2>
+      <p>Load is weight lifted × reps × sets, added up over the week for three groups: legs (quads, hamstrings, glutes, calves and abs), push (chest, shoulders and triceps) and pull (back, biceps and forearms). Bodyweight exercises count as a share of your body weight, all of it for pull-ups, chin-ups and dips and about two thirds for the rest. Cardio and timed holds aren’t part of it.</p>
+      <p>At the end of each week, Monday to Sunday, Gainloop adds up what you logged. If you logged only part of the plan, that week is scaled up to a full week, as long as you did at least half of it. The next week’s load for each group is then planned to be within ${round(MAX_CHANGE * 100)}% of that, up when you’re progressing and down when you’re deloading. If your plan has changed so much that last week no longer matches what you would repeat, the starting point is the last session of each exercise instead.</p>
+      <p>The load is then shared out over your exercises. The sets stay as planned and the reps change first, one or two more or fewer in a set. Once an exercise reaches the top of its rep range, it moves to the next weight and the reps start again lower, which is double progression. A change of ${round(MAX_CHANGE * 100)}% is small: about one rep on each exercise, or one small weight jump on one of them. An exercise you haven’t logged yet, or have only logged without a weight, is left to you the first time.</p>
       <h2 class="h2">Weekly wellness check</h2>
       <p>Every Sunday, five questions on fatigue, sleep, muscle soreness, stress and mood, each scored from 5 (best) to 1, so the total runs from 5 to 25. They come from a wellness questionnaire McLean and colleagues used with professional rugby league players, and a systematic review of athlete monitoring found that simple self-reported measures like these track how you’re coping with training better than common objective measures such as blood tests and heart rate.</p>
       <p>Your score is compared with your normal: the average of up to 6 recent check-ins once you have 3, kept between 13 and 19, and 15 until then. Three or more above normal is a fresh week, from 1 below to 2 above is normal, 2 to 4 below is tired, and more than that, or a score of 9 or less, is a lighter week. Any answer of 1 makes it a tired week at most, a fresh week needs no answer below 3, and a second tired week in a row becomes a lighter week.</p>
       <ul class="notes">
-        <li><strong>Fresh:</strong> one extra set on two exercises in each session, your priority lifts first, up to ${MAX_SETS} sets, and stop 1 rep before failure (1 or 2 if you’re newer to lifting). Leaning out, sets stay as planned because a calorie deficit limits recovery.</li>
-        <li><strong>Normal:</strong> your plan as usual.</li>
-        <li><strong>Tired:</strong> one set fewer on each exercise (never below 2), at most ${MAX_EXERCISES - 1} exercises, the same weights as last time and 2 or 3 reps short of failure.</li>
-        <li><strong>Lighter:</strong> about 40% fewer sets, at most ${MAX_EXERCISES - 2} exercises, weights about 10% lighter, rounded to the plate, and 3 or 4 reps short of failure. Leaning out, the weights stay the same and the reps drop, because heavy weights help you keep muscle in a deficit.</li>
+        <li><strong>Fresh:</strong> load up ${round(MAX_CHANGE * 100)}%, and stop 1 rep before failure (1 or 2 if you’re newer to lifting). Leaning out, it goes up ${round(MAX_CHANGE * 50, 1)}% because a calorie deficit limits recovery.</li>
+        <li><strong>Normal:</strong> load up ${round(MAX_CHANGE * 50, 1)}%, and stop 1 or 2 reps before failure.</li>
+        <li><strong>Tired:</strong> load down ${round(MAX_CHANGE * 50, 1)}%, and stop 2 or 3 reps before failure.</li>
+        <li><strong>Lighter:</strong> load down ${round(MAX_CHANGE * 100)}%, and stop 3 or 4 reps before failure. Leaning out, the weights stay where they can and the reps come down, because heavy weights help you keep muscle in a deficit.</li>
       </ul>
-      <p>A deload of this kind follows an international expert consensus on deloading: cut the number of sets, train further from failure, keep the familiar main lifts and leave out accessory work. So in a shorter session abs and isolation exercises go first and your main compound lifts stay.</p>
-      <p>Single answers matter too. With restless sleep or insomnia, or when you’re stressed, weights don’t go up that week and sets stop 2 or 3 reps from failure: poor sleep can lower how much you can lift, and stress slows recovery from hard training. With sore muscles, exercises that load a muscle at full stretch, like Romanian deadlifts, split squats and flyes, cause the most soreness, so each swaps for a gentler one you already know, or loses a set. A new exercise would bring soreness of its own. Your health rules always win: with high blood pressure or a heart condition, sets never go closer to failure than they allow.</p>
+      <p>The size of the change is kept small on purpose: a deload of this kind follows an international expert consensus on deloading, which says to cut the load, train further from failure and keep the familiar main lifts. All six exercises stay in every session.</p>
+      <p>Single answers matter too. With restless sleep or insomnia, or when you’re stressed, your load doesn’t go up that week and sets stop 2 or 3 reps from failure: poor sleep can lower how much you can lift, and stress slows recovery from hard training. With sore muscles, exercises that load a muscle at full stretch, like Romanian deadlifts, split squats and flyes, cause the most soreness, so each swaps for a gentler one you have already logged. A new exercise would bring soreness of its own. Your health rules always win: with high blood pressure or a heart condition, sets never go closer to failure than they allow.</p>
       <p>Two weeks running of low scores for sleep, stress or mood bring a gentle note that it can help to talk to someone. The answers stay on your phone and are never sent anywhere.</p>
       <h2 class="h2">Exercises you already do</h2>
       <p>Your exercises go to the front of the list for their muscle, so they’re picked first wherever your equipment allows. If one doesn’t fit its usual place, like a chin-up when your biceps get curls, it takes the place of one of the planner’s own picks for that muscle. If you do more exercises for a muscle than it has places in your week, the extras are left out and the app says why.</p>
@@ -1482,30 +1502,38 @@ function checkinView() {
 
 // ----- Weekly wellness check -----
 
-// This week's settings from the check-in in force today (a normal week if there isn't one)
+// This week's settings from the check-in in force today (a normal week if there isn't one), the sessions
+// as they run this week, and the load plan for legs, push and pull. Worked out once per screen.
+let weekCache = null;
 function weekNow(d = today()) {
+  if (weekCache && weekCache.d === d) return weekCache;
   const entry = activeEntry(S, d);
-  return { entry, w: weekSettings(entry, S.profile, rules()) };
+  const w = weekSettings(entry, S.profile, rules());
+  const adj = adjustWeek(S.program, w, { profile: S.profile, rules: rules(), familiar: familiarSet(S, d), keep: entry?.keep || [] });
+  const sessions = S.program.sessions.map((x) => adj.get(x.id));
+  const plan = planWeek(S, sessions, { settings: w, rangeOf: (ex) => repRange(ex, rules()), t: d });
+  weekCache = { d, entry, w, adj, plan };
+  return weekCache;
 }
 
-// One session as it runs this week (worked out for the whole week, so a muscle cut from one session keeps another)
+// One session as it runs this week
 function weekSession(s, wk = weekNow()) {
-  if (!wk.entry) return { ...s, slots: s.slots.map((sl) => ({ ...sl, planned: sl })), dropped: [] };
-  const week = adjustWeek(S.program, wk.w, { profile: S.profile, rules: rules(), familiar: familiarSet(S, today()), keep: wk.entry.keep || [] });
-  return week.get(s.id) || adjustSession(s, wk.w, { profile: S.profile, rules: rules(), familiar: familiarSet(S, today()), keep: wk.entry.keep || [] });
+  return wk.adj.get(s.id) || { ...s, slots: s.slots.map((sl, i) => ({ ...sl, i, planned: sl })) };
 }
 
-// 'Tired week: one set fewer, same weights'
+// 'Tired week: load down about 2.5%'
 function weekShort(w) {
-  const lean = S.profile.goal === 'lean';
-  const hold = w.load === 'hold' && w.band !== 'tired' ? ', no weight increases' : '';
-  return {
-    fresh: w.extra ? 'an extra set on your main lifts' : 'as planned',
-    normal: `as planned${hold}`,
-    tired: 'one set fewer, same weights',
-    lighter: lean ? 'fewer sets, same weights' : 'fewer sets, lighter weights',
-  }[w.band] + (w.band === 'fresh' ? hold : '');
+  const pct = `${round(Math.abs(w.delta) * 100, 1)}%`;
+  return w.mode === 'progress' ? `load up about ${pct}` : w.mode === 'deload' ? `load down about ${pct}` : 'load held where it is';
 }
+
+// kg × reps × sets in your unit, to the nearest 10 so it reads easily
+const fLoad = (kg) => `${fmtInt(Math.round((U().lift === 'lb' ? kgToLb(kg) : kg) / 10) * 10)} ${liftUnit()}`;
+function loadLine(info) {
+  if (info.base === null) return `${info.name}: your first full week of training sets your starting load.`;
+  return `${info.name} load: ${fLoad(info.planned)} this week, ${pctSigned(info.pct)} on ${info.rebased ? 'your last session of each exercise' : 'last week'} (${fLoad(info.base)}).`;
+}
+const pctSigned = (p) => `${p > 0 ? '+' : p < 0 ? '−' : ''}${Math.abs(p)}%`;
 
 function wellnessDueCard(t) {
   const due = wellnessDue(S, t);
@@ -2041,6 +2069,9 @@ function render() {
   const view = document.getElementById('view');
   if (S.profile) pruneLog(S, today());
   if (S.profile && ensureCurrentWeek(S, today())) save();
+  // the end of each week: work out what you lifted in the week that has just finished
+  weekCache = null;
+  if (S.profile && closeWeeks(S, today())) save();
   if (r.name !== 'checkin') ui.checkin = null;
   if (r.name !== 'wellness') ui.wq = null;
   if (r.name !== 'setup' && r.name !== 'profile') ui.setup = null;
@@ -3069,10 +3100,11 @@ function repairProgram() {
   syncCustoms();
   const missing = S.program.sessions.some((s) => s.slots.some((sl) => !exerciseById(sl.ex)));
   const before = Math.max(...S.program.sessions.map((s) => s.slots.length));
+  const oldFewest = Math.min(...S.program.sessions.map((s) => s.slots.length));
   if (missing || S.program.v !== PROGRAM_VERSION) {
     refreshProgram(S);
-    if (before > MAX_EXERCISES) {
-      S.changes.push({ d: today(), kind: 'edit', items: [{ area: 'training', text: `Sessions now have at most ${MAX_EXERCISES} exercises`, why: `Your longest session had ${before}. Each muscle now gets one exercise of up to ${MAX_SETS} sets in a session (two when there’s room), so the same work fits in fewer exercises. Where a session is full, smaller muscles like calves, glutes and abs move to another day, or rely on the big lifts.` }] });
+    if (before !== MAX_EXERCISES || oldFewest !== MAX_EXERCISES) {
+      S.changes.push({ d: today(), kind: 'edit', items: [{ area: 'training', text: `Every session now has exactly ${MAX_EXERCISES} exercises`, why: `Your sessions had between ${oldFewest} and ${before}. Each muscle gets one exercise of up to ${MAX_SETS} sets in a session (two when there’s room), and a session with fewer than ${MAX_EXERCISES} is filled out. Your weekly load for legs, push and pull is also tracked now.` }] });
     }
     save();
   }

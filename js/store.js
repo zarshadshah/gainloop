@@ -2,7 +2,7 @@
 import { addDays, isoDate, uid } from './util.js';
 import { blankHealth, normHealth } from './health.js';
 
-export const APP_VERSION = '1.3.0';
+export const APP_VERSION = '1.4.0';
 const KEY = 'gainloop.v1';
 
 export const blankState = () => ({
@@ -22,6 +22,7 @@ export const blankState = () => ({
   nutrition: null,
   program: null,
   exLog: {},
+  loads: [],
   sessionsDone: [],
   drafts: {},
   mealWeek: null,
@@ -72,7 +73,7 @@ export function migrate(s) {
   const base = blankState();
   const out = { ...base, ...s };
   out.units = { ...base.units, ...(s.units || {}) };
-  for (const k of ['weights', 'measures', 'pins', 'sessionsDone', 'customMeals', 'changes', 'checkins', 'myExercises', 'customExercises', 'adjust', 'wellness']) if (!Array.isArray(out[k])) out[k] = [];
+  for (const k of ['weights', 'measures', 'pins', 'sessionsDone', 'customMeals', 'changes', 'checkins', 'myExercises', 'customExercises', 'adjust', 'wellness', 'loads']) if (!Array.isArray(out[k])) out[k] = [];
   out.wellness = out.wellness.filter((e) => e && typeof e.d === 'string' && e.a && typeof e.a === 'object');
   for (const k of ['swaps', 'exLog', 'drafts', 'shopTicks', 'foodLog']) if (!out[k] || typeof out[k] !== 'object' || Array.isArray(out[k])) out[k] = {};
   if (!out.pantry || !Array.isArray(out.pantry.have)) out.pantry = { have: [] };

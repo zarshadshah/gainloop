@@ -34,11 +34,11 @@ const VERTICAL_PULLS = new Set(['lat-pulldown', 'pull-up']);
 // Harder bodyweight versions: reached through progression, not handed to beginners on day one
 const PROGRESSIONS = new Set(EXERCISES.filter((e) => e.next).map((e) => e.next));
 
-// Every session has at most 6 exercises, cardio included, and an exercise at most 5 sets
+// Every session has exactly 6 exercises, cardio included, and an exercise at most 5 sets
 export const MAX_EXERCISES = 6;
 export const MAX_SETS = 5;
 // Bumped when the way plans are built changes, so saved plans are rebuilt once
-export const PROGRAM_VERSION = 2;
+export const PROGRAM_VERSION = 3;
 
 // When sessions are full, places in the week go out in this order (your priorities always first).
 // Glutes and abs come last because squats, lunges, deadlifts and presses already work them hard.
@@ -364,6 +364,71 @@ export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
     }
   }
 
+  // 6b. Every session has exactly 6 exercises. A session with fewer gets more, in this order: a muscle that
+  //     is short of sets, then splitting a big exercise into two (same sets, more variety), then any other
+  //     muscle of the session, then a second exercise for a muscle already there.
+  const padded = {};
+  const weekOf = (m) => sum(sessions.map((t) => sum(t.slots.filter((x) => x.m === m).map((x) => x.sets))));
+  const avoidSet = ctx.avoid || new Set();
+  // loose: allow an exercise your joints would rather avoid, only when nothing else can fill the session
+  const addTo = (s, m, sets, loose = false) => {
+    occ[m] = (occ[m] ?? -1) + 1;
+    const used = new Set(s.slots.map((x) => x.ex));
+    const okEx = (e) => e && !used.has(e.id) && !isCardio(e) && (loose || !avoidSet.has(e.id) || mine.has(e.id));
+    let [ex] = pickExercises(m, 1, occ[m], profile, swaps, used, { ...ctx, placed });
+    // last resort: any exercise that fits your equipment, even a harder version or one the planner doesn't pick itself
+    if (!okEx(ex)) ex = optionsFor(m, profile, ctx).find(okEx) || swapChoices(m, profile).find(okEx);
+    if (!ex) return false;
+    s.slots.push({ ex: ex.id, m, sets, priority: pri.has(m), ...(mine.has(ex.id) ? { mine: true } : {}) });
+    padded[m] = (padded[m] || 0) + sets;
+    return true;
+  };
+  for (const s of sessions) {
+    const target = MAX_EXERCISES - (cardioIn[s.idx] ? 1 : 0);
+    const here = () => new Set(s.slots.map((x) => x.m));
+    const short = (m) => MULT[m] > 0 && (capped[m] > 0 || weekOf(m) === 0);
+    let loose = false;
+    let guard = 40;
+    while (s.slots.length < target && guard > 0) {
+      guard -= 1;
+      const missing = s.muscles.filter((m) => !here().has(m));
+      const byNeed = (a, b) => importance(a) - importance(b);
+      // a. a muscle that is short of sets
+      const needy = missing.filter((m) => short(m) || pri.has(m)).sort(byNeed);
+      if (needy.some((m) => addTo(s, m, 2, loose))) continue;
+      // b. split the biggest exercise in two
+      const big = [...s.slots].filter((x) => x.sets >= 4).sort((a, b) => b.sets - a.sets || importance(a.m) - importance(b.m));
+      let didSplit = false;
+      for (const sl of big) {
+        const keepSets = Math.ceil(sl.sets / 2);
+        const before = s.slots.length;
+        if (addTo(s, sl.m, sl.sets - keepSets, loose)) {
+          padded[sl.m] -= sl.sets - keepSets; // same sets as before, so no extra sets to count
+          sl.sets = keepSets;
+          didSplit = s.slots.length > before;
+          break;
+        }
+      }
+      if (didSplit) continue;
+      // c. any other muscle of the session
+      if ([...missing].sort(byNeed).some((m) => addTo(s, m, 2, loose))) continue;
+      // d. a second exercise for a muscle already in the session
+      const again = [...here()].sort((a, b) => importance(a) - importance(b));
+      if (again.some((m) => addTo(s, m, 2, loose))) continue;
+      // e. with very little equipment a session can run out of its own exercises: borrow from other muscles,
+      //    the ones that train easily alongside (abs, calves, glutes) first
+      const borrow = ['abs', 'calves', 'glutes', 'hamstrings', 'quads', 'shoulders', 'triceps', 'biceps', 'back', 'chest', 'forearms'].filter((m) => !s.muscles.includes(m));
+      if (borrow.some((m) => addTo(s, m, 2, loose))) continue;
+      // f. only now an exercise your joints would rather avoid, so the session still has all its exercises
+      if (loose) break;
+      loose = true;
+    }
+  }
+  for (const m of Object.keys(padded)) {
+    if (capped[m]) capped[m] = Math.max(0, capped[m] - Math.max(0, padded[m]));
+    if (!capped[m]) delete capped[m];
+  }
+
   // 7. The cardio finishers placed at the start go at the end of their sessions
   for (const s of sessions) if (cardioIn[s.idx]) s.slots.push(cardioIn[s.idx]);
 
@@ -400,7 +465,7 @@ export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
             : 'It needs equipment you said you don’t have.';
       } else if (swaps?.[id]) why = 'You swapped it for something else.';
       else if (cardioFull.has(id)) why = 'Each session already ends with one cardio finisher, which keeps sessions to 6 exercises. Do it on a rest day if you like.';
-      else if (!done[ex.m] && capped[ex.m]) why = `Sessions are kept to ${MAX_EXERCISES} exercises, so with ${profile.days} training days ${muscleName(ex.m).toLowerCase()} ${SINGULAR.has(ex.m) ? 'gets' : 'get'} no direct sets.`;
+      else if (!done[ex.m] && capped[ex.m]) why = `Every session has exactly ${MAX_EXERCISES} exercises, so with ${profile.days} training days ${muscleName(ex.m).toLowerCase()} ${SINGULAR.has(ex.m) ? 'gets' : 'get'} no direct sets.`;
       else if (!done[ex.m]) why = `${muscleName(ex.m)} ${SINGULAR.has(ex.m) ? 'gets' : 'get'} no direct sets in this plan.`;
       else why = `Your other ${MUSCLE_WORD[ex.m] || ex.m} exercises filled the slots this week.`;
     }
@@ -454,8 +519,8 @@ export function whySets(program, muscle, profile) {
   if (lost) {
     const also = { glutes: ' Squats, lunges and Romanian deadlifts still work them hard.', abs: ' Squats, deadlifts and presses still work them as you brace.' }[muscle] || '';
     parts.push(n
-      ? `Sessions are kept to ${MAX_EXERCISES} exercises each, cardio included, and an exercise to ${MAX_SETS} sets, so with ${program.days} training days ${name} ${verb('gets', 'get')} ${n} sets a week instead of ${n + lost}.${also} Another training day would give more room.`
-      : `Sessions are kept to ${MAX_EXERCISES} exercises each, cardio included, so with ${program.days} training days there’s no place for ${name}.${also} Another training day, or making ${name} a priority, would give ${verb('it', 'them')} one.`);
+      ? `Every session has exactly ${MAX_EXERCISES} exercises, cardio included, and an exercise has at most ${MAX_SETS} sets, so with ${program.days} training days ${name} ${verb('gets', 'get')} ${n} sets a week instead of ${n + lost}.${also} Another training day would give more room.`
+      : `Every session has exactly ${MAX_EXERCISES} exercises, cardio included, so with ${program.days} training days there’s no place for ${name}.${also} Another training day, or making ${name} a priority, would give ${verb('it', 'them')} one.`);
     return parts.join(' ');
   }
   if (p && n < intended) parts.push(`Your sessions fit about ${program.perSession} sets each, so with everything else that works out at ${n} a week. More time per session or an extra day would give more room.`);
@@ -484,39 +549,23 @@ export function cardioAdvice(ex, history, plannedMin, effort = 'easy') {
   return { min: Math.max(plannedMin, last.min), text: `${Math.max(plannedMin, last.min)} minutes. ${talk}` };
 }
 
-// The lighter weight for a lighter week: about pct less, rounded down to the exercise's usual step.
-// If the nearest step down is more than 20% lighter (small dumbbells), the weight stays and the reps drop.
-export function lighterKg(ex, w, pct) {
-  if (!w || !pct) return w;
-  const step = ex.step || 2.5;
-  const kg = Math.round(Math.floor((w * (1 - pct)) / step + 1e-9) * step * 100) / 100;
-  return kg > 0 && kg < w && (w - kg) / w <= 0.2 ? kg : w;
-}
-
 // Double progression: stay at a weight until you hit the top of the range on every set, then go up.
-// week (from your weekly wellness check): load 'progress' as normal, 'hold' keeps last time's weight,
-// 'lighter' takes off pct (or keeps the weight with fewer reps when pct is 0).
+// week (from your weekly wellness check): load 'progress' as normal, 'hold' keeps last time's weight.
+// Once a full week of training has been recorded, the weekly load plan (load.js) sets the numbers instead.
 export function advice(ex, history, fmtW, rr = ex.rr, stop = '1 or 2', week = null) {
   const last = history && history.length ? history[history.length - 1] : null;
   const [lo, hi] = rr;
   const mode = week?.load || 'progress';
   if (!last || !last.reps?.length) {
-    const lighter = mode === 'lighter' ? 'Lighter week, so keep it easy. ' : '';
-    if (ex.load === 'kg') return { kg: null, text: `${lighter}First time: pick a weight you could lift about ${hi + 2} times, and stop each set ${stop} reps before you'd fail.` };
-    if (ex.load === 's') return { kg: null, text: `${lighter}First time: hold for as long as you can with good form, up to ${hi} seconds.` };
-    return { kg: null, text: `${lighter}First time: do as many good reps as you can, stopping ${stop} short of failure.` };
+    if (ex.load === 'kg') return { kg: null, text: `First time: pick a weight you could lift about ${hi + 2} times, and stop each set ${stop} reps before you'd fail.` };
+    if (ex.load === 's') return { kg: null, text: `First time: hold for as long as you can with good form, up to ${hi} seconds.` };
+    return { kg: null, text: `First time: do as many good reps as you can, stopping ${stop} short of failure.` };
   }
   const allTop = last.reps.every((r) => r >= hi);
   const anyLow = last.reps.some((r) => r < lo);
 
   if (ex.load === 'kg') {
     const w = last.kg ?? 0;
-    if (mode === 'lighter') {
-      const kg = w ? lighterKg(ex, w, week.pct || 0) : 0;
-      if (!w) return { kg: null, text: `Lighter week: about ${lo} to ${Math.max(lo, hi - 2)} reps a set, stopping ${stop} short of failure.` };
-      if (kg < w) return { kg, text: `Lighter week: use ${fmtW(kg)}, about ${Math.round((1 - kg / w) * 100)}% less than last time, and stop each set ${stop} reps before you'd fail.` };
-      return { kg: w, text: `Lighter week: stay at ${fmtW(w)} but stop each set ${stop} reps before you'd fail, so you do fewer reps.` };
-    }
     if (mode === 'hold') {
       if (!w) return { kg: null, text: `Stay at bodyweight this week and stop each set ${stop} reps before you'd fail.` };
       return { kg: w, text: allTop ? `You hit ${hi} on every set last time, but stay at ${fmtW(w)} this week while you recover, and go up next week.` : `Stay at ${fmtW(w)} this week and stop each set ${stop} reps before you'd fail. No need to beat last time.` };
@@ -529,12 +578,10 @@ export function advice(ex, history, fmtW, rr = ex.rr, stop = '1 or 2', week = nu
     return { kg: w || null, text: `Stay at ${w ? fmtW(w) : 'bodyweight'} and beat last time by a rep on at least one set.` };
   }
   if (ex.load === 's') {
-    if (mode === 'lighter') return { kg: null, text: `Lighter week: hold for about ${lo} seconds, well short of your limit.` };
     if (mode === 'hold') return { kg: null, text: 'Hold for about as long as last time. No need to beat it this week.' };
     if (allTop) return { kg: null, text: `You held ${hi} s on every set. Add 10 seconds or hold something heavier.` };
     return { kg: null, text: 'Aim to hold a few seconds longer than last time.' };
   }
-  if (mode === 'lighter') return { kg: null, text: `Lighter week: about ${lo} to ${Math.max(lo, hi - 2)} reps a set, stopping ${stop} short of failure.` };
   if (mode === 'hold') return { kg: null, text: `Aim for about what you did last time, stopping ${stop} reps short of failure. No need to beat it this week.` };
   if (allTop) {
     const next = ex.next ? exerciseById(ex.next) : null;

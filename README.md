@@ -25,7 +25,7 @@ Most rows answer a gap found in recent reviews of Strongr Fastr, MeThreeSixty, Z
 | Meal plans assume a big shop | Type the food you have and the AI suggests meals that use only that food (plus oil, salt and spices), sized to your plan and checked against your food rules before you see them. Amounts of staples like rice, pasta and oil are checked against typical label values too. Or tick foods from a list for ideas made on the phone. Use one for any day with a tap. |
 | One day off plan derails the plan | Log a meal you skipped, swapped or added (the AI can estimate it). Gainloop spreads the difference over 3 days to 2 weeks, never more than 15% a day, protein unchanged, with optional extra cardio, and explains it. |
 | Cardio is missing or bolted on | 12 cardio options with pictures and calorie estimates. Cardio you do goes at the end of two sessions a week, kept easy while you build muscle. |
-| Plans don't care how you feel | Every Sunday, five questions on fatigue, sleep, soreness, stress and mood (scored 1 to 5, from an athlete wellness questionnaire). Compared with your own normal, the score makes the week fresh, normal, tired or lighter: sets, how close to failure, the weights to use and which exercises all follow. Sessions never go over 6 exercises. |
+| Plans don't care how you feel | Every Sunday, five questions on fatigue, sleep, soreness, stress and mood (scored 1 to 5, from an athlete wellness questionnaire). Compared with your own normal, the score makes the week fresh, normal, tired or lighter, and that decides whether your weekly load goes up or down, by 5% at most. Every session always has exactly 6 exercises. |
 | Health conditions are ignored | Diabetes (type 1, type 2, prediabetes), high blood pressure, heart and kidney conditions, coeliac disease, high cholesterol, asthma and joint pain change the meals, rep ranges and exercise choices, with safety notes. |
 
 ### Next
@@ -118,12 +118,13 @@ In Codespaces, open the forwarded port 8080. Edit a file, save, refresh.
 | `css/app.css` | All styling. Colours are tokens at the top, with light and dark versions. |
 | `js/app.js` | Every screen, button and form. |
 | `js/calc.js` | The maths: body fat, frame targets, calories and the check-in rules. |
-| `js/plan.js` | Builds the training plan (at most 6 exercises a session), keeping the exercises you already do, and the progression advice. |
+| `js/plan.js` | Builds the training plan (exactly 6 exercises a session), keeping the exercises you already do, and the progression advice. |
 | `js/meals.js` | Meal planner, diet and health filters, portion scaling and shopping list. |
 | `js/pantry.js` | "Cook with what you have": meal ideas from the foods you tick. |
 | `js/health.js` | Health conditions: what each one changes and its safety notes. |
 | `js/track.js` | The food log and back-on-track plans: daily targets, safe limits, extra cardio. |
 | `js/wellness.js` | The weekly wellness check: the questions, your score against your normal, and how the week's sessions change. |
+| `js/load.js` | Weekly load (weight × reps × sets) for legs, push and pull: closes each finished week, and plans next week within 5% of it, shared out as a weight and reps for each exercise. |
 | `js/ai.js` | Talks to the AI helper and checks its answers: totals, food rules, foods you didn't list. |
 | `functions/api/ai.js` | The AI helper on Cloudflare: meal ideas, food estimates and coach notes from Workers AI. |
 | `wrangler.toml` | Cloudflare settings: the site folder and the Workers AI binding. |
@@ -152,8 +153,9 @@ In Codespaces, open the forwarded port 8080. Edit a file, save, refresh.
 - **Add cardio:** copy a cardio entry at the end of `EXERCISES` (`m: 'cardio'`, `load: 'min'`, `rr` in minutes, `met` for easy, moderate and hard from the Compendium), then give it a guide and pictures like any exercise.
 - **Add an exercise:** copy an entry in `EXERCISES` in `js/data/exercises.js`. `m` is the muscle, `k` is `c` (compound) or `i` (isolation), `eq` lists the equipment it suits, `rr` is the rep range and `step` the weight jump in kg. Add `auto: false` if the planner should only use it for people who already do it. Then give it a guide in `js/data/guides.js` and pictures in `js/data/pictures.js` (copy two pictures into `img/ex/` named `<name>-1.webp` and `<name>-2.webp`, and a small one into `img/ex/t/<name>.webp`). Without pictures it still works, it just shows the steps.
 - **Change a health rule:** `healthRules()` in `js/health.js` decides what each condition changes, and `STRESS` lists the exercises left out for each sore joint. The How the numbers work screen in `js/app.js` explains them, so update both.
-- **Change the wellness rules:** `assess()` in `js/wellness.js` turns answers into a fresh, normal, tired or lighter week, `weekSettings()` says what each week changes, and `adjustSession()` applies it to a session. The How the numbers work screen explains them, so update both.
-- **Change the exercise limit:** `MAX_EXERCISES` and `MAX_SETS` at the top of `js/plan.js`. If you change how plans are built, bump `PROGRAM_VERSION` so saved plans are rebuilt once.
+- **Change the wellness rules:** `assess()` in `js/wellness.js` turns answers into a fresh, normal, tired or lighter week, `weekSettings()` says how hard each week is, and `loadDelta()` in `js/load.js` says how far the load moves (never more than `MAX_CHANGE`, 5%). The How the numbers work screen explains it to the user, so change the text there too.
+- **Change the exercise count:** `MAX_EXERCISES` and `MAX_SETS` at the top of `js/plan.js`. Every session is filled to exactly `MAX_EXERCISES` (step 6b of `buildProgram()`). If you change how plans are built, bump `PROGRAM_VERSION` so saved plans are rebuilt once.
+- **Change the load groups or the 5% limit:** `LOAD_GROUPS`, `GROUP_OF` and `MAX_CHANGE` in `js/load.js`.
 - **Change the calorie rules:** `calorieDecision()` in `js/calc.js`. The same rules are explained on the How the numbers work screen in `js/app.js`, so update both.
 - **Change colours or fonts:** the tokens at the top of `css/app.css`.
 
@@ -183,8 +185,9 @@ The plan is to keep one codebase and grow it in phases.
 - **Body fat from the tape:** US Navy method (Hodgdon and Beckett).
 - **Calories:** Mifflin-St Jeor equation (1990), adjusted for activity and training days, then corrected at each check-in from your real weight trend.
 - **FFMI:** fat-free mass index, normalised to 1.8 m.
-- **Training:** weekly sets by experience, fitted to your days and session length, with at most 6 exercises a session (cardio included) and 5 sets an exercise; double progression.
-- **Weekly wellness check:** the five questions are McLean and colleagues' wellness questionnaire (2010). Your total is compared with your own normal (the average of up to 6 recent weeks once you have 3). Fresh weeks add a set to two lifts a session; tired weeks take a set off, hold your weights and stop 2 or 3 reps from failure; lighter weeks cut sets by about 40% and weights by about 10%, keeping the main lifts and dropping accessory work, as the 2023 Delphi consensus on deloading describes. Poor sleep and stress hold the weights, and sore muscles swap stretch-heavy exercises for gentler ones you already know.
+- **Training:** weekly sets by experience, fitted to your days and session length, with exactly 6 exercises a session (cardio included) and at most 5 sets an exercise; double progression.
+- **Weekly wellness check:** the five questions are McLean and colleagues' wellness questionnaire (2010). Your total is compared with your own normal (the average of up to 6 recent weeks once you have 3). Fresh weeks raise the load 5%, normal weeks 2.5%, tired weeks lower it 2.5% and lighter weeks 5% (Bell and colleagues' 2023 deloading consensus: less load, further from failure, familiar lifts kept). Poor sleep or stress holds it; leaning out caps rises at 2.5%. Sore muscles swap stretch-heavy exercises for gentler ones you have already logged.
+- **Weekly load:** weight × reps × sets for legs (with abs), push and pull, added up at the end of each week from what you log. Bodyweight exercises count 65% of body weight (100% for pull-ups, chin-ups and dips). The next week stays within 5% of it, with the reps changing first and the weight when the reps can't.
 - **Health conditions:** cautious general guidance. With diabetes, carbs are capped at about 45% of calories and meals with added sugar are left out. With kidney disease, protein is set to 0.8 g per kg, as the KDIGO 2024 guideline suggests for stage 3 to 5 chronic kidney disease without dialysis. With high blood pressure or a heart condition, sets stay at 8 or 10 reps and up, stopping short of failure, with no breath-holding.
 
 Gainloop gives general fitness guidance, not medical advice. Anyone with a health condition should check their plan with their doctor or care team, whose advice comes first.
