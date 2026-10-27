@@ -299,7 +299,7 @@ function setupView(mode = 'new') {
       <fieldset class="field"><legend>Lifting experience</legend>${choices('experience', Object.entries(C.EXPERIENCE).map(([k, v]) => [k, v.name, v.desc]), d.experience)}</fieldset>
       <fieldset class="field"><legend>Days a week</legend>${seg('days', [2, 3, 4, 5, 6].map((n) => [n, String(n)]), d.days)}</fieldset>
       <fieldset class="field"><legend>Time per session</legend>${seg('minutes', [45, 60, 75, 90].map((n) => [n, `${n} min`]), d.minutes)}</fieldset>
-      <fieldset class="field"><legend>Where you train</legend>${choices('equipment', [['gym', 'A gym', 'Barbells, dumbbells, cables and machines.'], ['home', 'Home with dumbbells', 'A set of dumbbells and a bench.']], d.equipment)}</fieldset>
+      <fieldset class="field"><legend>Where you train</legend>${choices('equipment', [['gym', 'A gym', 'Barbells, dumbbells, cables and machines.'], ['home', 'Home with dumbbells', 'A set of dumbbells and a bench.'], ['bw', 'Bodyweight only', 'No equipment. A backpack and a chair help.']], d.equipment)}</fieldset>
       <div class="field check"><input type="checkbox" id="pullupBar" name="pullupBar"${d.pullupBar ? ' checked' : ''}><label for="pullupBar">I have a pull-up bar at home</label></div>`;
   } else if (name === 'exercises') {
     body = `

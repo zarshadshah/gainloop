@@ -83,11 +83,6 @@ export function migrate(s) {
   out.myExercises = [...new Set(out.myExercises.map(renameEx))];
   out.swaps = Object.fromEntries(Object.entries(out.swaps).map(([k, v]) => [renameEx(k), renameEx(v)]));
   for (const k of ['parq', 'baseline']) if (!out[k] || typeof out[k] !== 'object' || Array.isArray(out[k])) out[k] = null;
-  // bodyweight-only training is paused for now: those plans move to home training and are rebuilt
-  if (out.profile?.equipment === 'bw') {
-    out.profile = { ...out.profile, equipment: 'home' };
-    if (out.program) out.program = { ...out.program, v: 0 };
-  }
   if (out.profile) out.profile = { ...out.profile, health: normHealth(out.profile.health) };
   return out;
 }
