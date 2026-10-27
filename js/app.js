@@ -303,7 +303,7 @@ function setupView(mode = 'new') {
   } else if (name === 'exercises') {
     body = `
       <h1 class="title">Exercises you already do</h1>
-      <p class="muted">Optional. Add the ones you do now and your plan keeps them, building everything else around them. Any name works, like “bench”, “RDL” or “pull-ups”.</p>
+      <p class="muted">Optional. Add the ones you do now and your plan keeps them, building everything else around them. Any name works, like “bench”, “RDL” or “lat pulldown”.</p>
       ${pickerHTML('setup')}`;
   } else if (name === 'goal') {
     const lean = C.leanAllowed({ ...d, ageSetOn: today() }, d.kg || C.currentWeight(S.weights, today()), today());
@@ -1814,7 +1814,7 @@ function resultsHTML(q, ctx) {
 }
 
 function pickerHTML(ctx) {
-  return `<div class="field"><label for="ex-q">Search exercises</label><input id="ex-q" type="search" autocomplete="off" enterkeyhint="search" placeholder="bench press, squats, pull-ups" data-live="ex-search" data-ctx="${ctx}"></div>
+  return `<div class="field"><label for="ex-q">Search exercises</label><input id="ex-q" type="search" autocomplete="off" enterkeyhint="search" placeholder="bench press, squats, lat pulldown" data-live="ex-search" data-ctx="${ctx}"></div>
     <ul class="list picker-results" id="ex-results" aria-live="polite"></ul>
     <h2 class="h3 picked-head">Your exercises</h2>
     <div id="ex-picked">${pickedHTML(ctx)}</div>`;
