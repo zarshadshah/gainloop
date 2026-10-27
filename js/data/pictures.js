@@ -2,7 +2,7 @@
 // (https://repdb.co, free for in-app use with the credit line below). Files live in img/ex/:
 // <f>-1.webp is the start, <f>-2.webp the other end of the move, <f>.webp a single picture, t/<f>.webp the thumbnail.
 // mode: 'loop' (default) switches between the two pictures, 'pair' shows them side by side (used when the
-// two were drawn from different angles), 'still' is one picture for holds. flip: 2 mirrors the second picture
+// two were drawn from different angles), 'still' is one picture for holds, 'seq' is a move of n steps (<f>-1 to <f>-n) shown one after another. flip: 2 mirrors the second picture
 // so both face the same way. note: shown under the pictures when they show a slightly different version.
 export const PICTURE_CREDIT = 'Exercise data by RepDB (repdb.co)';
 export const PICTURE_CREDIT_URL = 'https://repdb.co';
@@ -103,11 +103,11 @@ export const PICTURES = {
   'stair-climber': { f: 'stair-climber', mode: 'still' },
   skipping: { f: 'jump-rope', mode: 'still' },
   'jumping-jacks': { f: 'jumping-jacks' },
-  burpees: { f: 'burpees', mode: 'still', note: 'This shows the middle of the move, in the push-up position.' },
+  burpees: { f: 'burpees', mode: 'seq', n: 4, note: 'The four steps: stand, hands down to the push-up position, chest to the floor, then jump up with your arms overhead. Step back instead of jumping to make it easier.' },
   'mountain-climbers': { f: 'mountain-climbers' },
 };
 
 export const pictureFor = (exId) => PICTURES[exId] || null;
 const DIR = 'img/ex/';
 export const thumbSrc = (p) => `${DIR}t/${p.f}.webp`;
-export const frameSrcs = (p) => (p.mode === 'still' ? [`${DIR}${p.f}.webp`] : [`${DIR}${p.f}-1.webp`, `${DIR}${p.f}-2.webp`]);
+export const frameSrcs = (p) => (p.mode === 'still' ? [`${DIR}${p.f}.webp`] : Array.from({ length: p.n || 2 }, (_, i) => `${DIR}${p.f}-${i + 1}.webp`));

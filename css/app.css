@@ -474,10 +474,16 @@ body:not(.has-tabs) #toast { bottom: calc(var(--safe-bottom) + 24px); }
 /* ---------- Exercise pictures ---------- */
 .pic { position: relative; width: 100%; max-width: 380px; margin: 0 auto; overflow: hidden; border-radius: 16px; background: var(--pic-bg); }
 .pic-frame { display: block; width: 100%; height: auto; filter: var(--pic-dim); }
-.pic-loop, .pic-still { aspect-ratio: 1 / 1; }
-.pic-loop .pic-frame, .pic-still .pic-frame { position: absolute; inset: 0; height: 100%; object-fit: contain; }
+.pic-loop, .pic-still, .pic-seq { aspect-ratio: 1 / 1; }
+.pic-loop .pic-frame, .pic-still .pic-frame, .pic-seq .pic-frame { position: absolute; inset: 0; height: 100%; object-fit: contain; }
 .pic-loop .pic-f2 { animation: pic-swap 2.8s ease-in-out infinite; }
 .pic-loop.paused .pic-f2 { animation-play-state: paused; }
+/* a move of four steps: each picture shows for one second of a four second loop (delays are set on each picture) */
+.pic-seq .pic-frame { opacity: 0; animation: pic-seq 4s step-end infinite; }
+.pic-seq.paused .pic-frame { animation-play-state: paused; }
+@keyframes pic-seq { 0% { opacity: 1; } 25%, 100% { opacity: 0; } }
+.pic-strip { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-width: 520px; background: none; border-radius: 0; }
+.pic-strip .pic-frame { aspect-ratio: 1 / 1; object-fit: contain; border-radius: 12px; background: var(--pic-bg); }
 @keyframes pic-swap { 0%, 40% { opacity: 0; } 50%, 90% { opacity: 1; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .pic-loop .pic-f2 { animation: none; } }
 .pic-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-width: 520px; background: none; border-radius: 0; }

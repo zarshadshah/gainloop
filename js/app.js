@@ -41,10 +41,11 @@ function thumb(exId) {
 function pictureStage(ex) {
   const p = pictureFor(ex.id);
   if (!p) return '<div class="pic pic-none"><p>There’s no picture for exercises you add yourself. The video link below shows how others do it.</p></div>';
-  const mode = p.mode === 'still' ? 'still' : p.mode === 'pair' || reduceMotion() ? 'pair' : 'loop';
-  const label = mode === 'still' ? `Picture of ${lcFirst(ex.name)}` : `Pictures of the start and end of ${lcFirst(ex.name)}`;
-  const frames = frameSrcs(p).map((src, i) => `<img class="pic-frame pic-f${i + 1}${p.flip === i + 1 ? ' flip' : ''}" src="${src}" alt="" decoding="async">`).join('');
-  return `<figure class="pic pic-${mode}${mode === 'loop' && ui.picPaused ? ' paused' : ''}" role="img" aria-label="${esc(label)}">${frames}</figure>`;
+  const steps = p.mode === 'seq';
+  const mode = p.mode === 'still' ? 'still' : steps ? (reduceMotion() ? 'strip' : 'seq') : p.mode === 'pair' || reduceMotion() ? 'pair' : 'loop';
+  const label = mode === 'still' ? `Picture of ${lcFirst(ex.name)}` : steps ? `The steps of ${lcFirst(ex.name)}, one after another` : `Pictures of the start and end of ${lcFirst(ex.name)}`;
+  const frames = frameSrcs(p).map((src, i) => `<img class="pic-frame pic-f${i + 1}${p.flip === i + 1 ? ' flip' : ''}" src="${src}" alt="" decoding="async"${mode === 'seq' ? ` style="animation-delay:${i}s"` : ''}>`).join('');
+  return `<figure class="pic pic-${mode}${(mode === 'loop' || mode === 'seq') && ui.picPaused ? ' paused' : ''}" role="img" aria-label="${esc(label)}">${frames}</figure>`;
 }
 // What an exercise needs, in a few words ('No equipment' rather than 'Nothing')
 function kitText(exId, first = false) {
@@ -2581,7 +2582,7 @@ const ACTIONS = {
   'pic-toggle'(el) {
     // remembered while the app is open, so the next exercise you look at stays paused too
     ui.picPaused = !ui.picPaused;
-    el.closest('.guide')?.querySelector('.pic-loop')?.classList.toggle('paused', ui.picPaused);
+    el.closest('.guide')?.querySelector('.pic-loop, .pic-seq')?.classList.toggle('paused', ui.picPaused);
     el.textContent = ui.picPaused ? 'Play' : 'Pause';
     el.setAttribute('aria-pressed', String(ui.picPaused));
   },
