@@ -34,11 +34,11 @@ const VERTICAL_PULLS = new Set(['lat-pulldown', 'pull-up']);
 // Harder bodyweight versions: reached through progression, not handed to beginners on day one
 const PROGRESSIONS = new Set(EXERCISES.filter((e) => e.next).map((e) => e.next));
 
-// Every session has exactly 6 exercises, cardio included, and an exercise at most 5 sets
+// Every session has exactly 6 exercises, plus a separate 10 minute cardio finisher, and an exercise at most 5 sets
 export const MAX_EXERCISES = 6;
 export const MAX_SETS = 5;
 // Bumped when the way plans are built changes, so saved plans are rebuilt once
-export const PROGRAM_VERSION = 4;
+export const PROGRAM_VERSION = 5;
 
 // When sessions are full, places in the week go out in this order (your priorities always first).
 // Glutes and abs come last because squats, lunges, deadlifts and presses already work them hard.
@@ -63,7 +63,7 @@ const TIERS = [
 export const setsPerSession = (minutes) => clamp(Math.round((minutes - 8) / 2.6), 10, 32);
 export const estimateMinutes = (sets) => Math.round(sets * 2.6 + 8);
 
-// Every session ends with 10 minutes of cardio, one of its 6 exercises: kept easy while building muscle so
+// Every session ends with 10 minutes of cardio, on top of its 6 exercises: kept easy while building muscle so
 // it helps your heart and recovery without eating into your gains. Cardio you already do goes in first.
 export const CARDIO_MIN = 10;
 export const CARDIO_FINISH = { build: { min: CARDIO_MIN, effort: 'easy' }, recomp: { min: CARDIO_MIN, effort: 'moderate' }, lean: { min: CARDIO_MIN, effort: 'moderate' } };
@@ -246,7 +246,7 @@ export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
 
   // 1. Places in the week. A muscle takes one exercise of up to 5 sets in a session, and a session holds
   //    6 exercises. Places go out in order of importance, each to the session with the most room left.
-  const room = sessions.map((s) => MAX_EXERCISES - (cardioIn[s.idx] ? 1 : 0));
+  const room = sessions.map(() => MAX_EXERCISES);
   const importance = (m) => (pri.has(m) ? priOrder.indexOf(m) - 100 : KEEP.indexOf(m));
   const byImportance = MUSCLES.map((m) => m.id).filter((m) => weekly[m] > 0).sort((a, b) => importance(a) - importance(b));
   const want = {};
@@ -398,7 +398,7 @@ export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
     return true;
   };
   for (const s of sessions) {
-    const target = MAX_EXERCISES - (cardioIn[s.idx] ? 1 : 0);
+    const target = MAX_EXERCISES;
     const here = () => new Set(s.slots.map((x) => x.m));
     const short = (m) => MULT[m] > 0 && (capped[m] > 0 || weekOf(m) === 0);
     let loose = false;
@@ -478,7 +478,7 @@ export function buildProgram(profile, priorities, swaps = {}, ctx = {}) {
           : profile.equipment === 'gym' ? 'It’s a version for training at home, so your plan uses gym exercises for that muscle.'
             : 'It needs equipment you said you don’t have.';
       } else if (swaps?.[id]) why = 'You swapped it for something else.';
-      else if (cardioFull.has(id)) why = 'Each session already ends with one cardio finisher, which keeps sessions to 6 exercises. Do it on a rest day if you like.';
+      else if (cardioFull.has(id)) why = 'Each session already ends with one 10 minute cardio finisher. Do it on a rest day if you like.';
       else if (!done[ex.m] && capped[ex.m]) why = `Every session has exactly ${MAX_EXERCISES} exercises, so with ${profile.days} training days ${muscleName(ex.m).toLowerCase()} ${SINGULAR.has(ex.m) ? 'gets' : 'get'} no direct sets.`;
       else if (!done[ex.m]) why = `${muscleName(ex.m)} ${SINGULAR.has(ex.m) ? 'gets' : 'get'} no direct sets in this plan.`;
       else why = `Your other ${MUSCLE_WORD[ex.m] || ex.m} exercises filled the slots this week.`;
@@ -533,8 +533,8 @@ export function whySets(program, muscle, profile) {
   if (lost) {
     const also = { glutes: ' Squats, lunges and Romanian deadlifts still work them hard.', abs: ' Squats, deadlifts and presses still work them as you brace.' }[muscle] || '';
     parts.push(n
-      ? `Every session has exactly ${MAX_EXERCISES} exercises, cardio included, and an exercise has at most ${MAX_SETS} sets, so with ${program.days} training days ${name} ${verb('gets', 'get')} ${n} sets a week instead of ${n + lost}.${also} Another training day would give more room.`
-      : `Every session has exactly ${MAX_EXERCISES} exercises, cardio included, so with ${program.days} training days there’s no place for ${name}.${also} Another training day, or making ${name} a priority, would give ${verb('it', 'them')} one.`);
+      ? `Every session has exactly ${MAX_EXERCISES} exercises plus the cardio finisher, and an exercise has at most ${MAX_SETS} sets, so with ${program.days} training days ${name} ${verb('gets', 'get')} ${n} sets a week instead of ${n + lost}.${also} Another training day would give more room.`
+      : `Every session has exactly ${MAX_EXERCISES} exercises plus the cardio finisher, so with ${program.days} training days there’s no place for ${name}.${also} Another training day, or making ${name} a priority, would give ${verb('it', 'them')} one.`);
     return parts.join(' ');
   }
   if (p && n < intended) parts.push(`Your sessions fit about ${program.perSession} sets each, so with everything else that works out at ${n} a week. More time per session or an extra day would give more room.`);
