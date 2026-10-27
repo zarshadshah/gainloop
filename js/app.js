@@ -299,7 +299,8 @@ function setupView(mode = 'new') {
       <fieldset class="field"><legend>Lifting experience</legend>${choices('experience', Object.entries(C.EXPERIENCE).map(([k, v]) => [k, v.name, v.desc]), d.experience)}</fieldset>
       <fieldset class="field"><legend>Days a week</legend>${seg('days', [2, 3, 4, 5, 6].map((n) => [n, String(n)]), d.days)}</fieldset>
       <fieldset class="field"><legend>Time per session</legend>${seg('minutes', [45, 60, 75, 90].map((n) => [n, `${n} min`]), d.minutes)}</fieldset>
-      <fieldset class="field"><legend>Where you train</legend>${choices('equipment', [['gym', 'A gym', 'Barbells, dumbbells, cables and machines.'], ['home', 'Home with dumbbells', 'A set of dumbbells and a bench.']], d.equipment)}</fieldset>`;
+      <fieldset class="field"><legend>Where you train</legend>${choices('equipment', [['gym', 'A gym', 'Barbells, dumbbells, cables and machines.'], ['home', 'Home with dumbbells', 'A set of dumbbells and a bench.']], d.equipment)}</fieldset>
+      <div class="field check"><input type="checkbox" id="pullupBar" name="pullupBar"${d.pullupBar ? ' checked' : ''}><label for="pullupBar">I have a pull-up bar at home</label></div>`;
   } else if (name === 'exercises') {
     body = `
       <h1 class="title">Exercises you already do</h1>
@@ -389,6 +390,7 @@ function captureSetup(form, strict) {
     d.days = Number(fval(form, 'days') || d.days);
     d.minutes = Number(fval(form, 'minutes') || d.minutes);
     d.equipment = fval(form, 'equipment') || d.equipment;
+    d.pullupBar = fchecked(form, 'pullupBar');
   } else if (name === 'goal') {
     d.goal = fval(form, 'goal') || d.goal;
     d.activity = fval(form, 'activity') || d.activity;
@@ -884,7 +886,7 @@ function trainView() {
   const priSet = new Set(prog.priorities.map((x) => x.muscle));
   // muscles the 6-exercise limit left without sets still show, at 0, so you can tap for why
   const muscles = MUSCLES.filter((m) => prog.weekly[m.id] > 0 || prog.capped?.[m.id] > 0);
-  const eqName = { gym: 'gym', home: 'dumbbells at home' }[p.equipment];
+  const eqName = { gym: 'gym', home: 'dumbbells at home', bw: 'bodyweight' }[p.equipment];
   const autoPri = prog.priorities.filter((x) => x.source === 'tape').map((x) => x.muscle);
   const r = rules();
   const mine = (prog.mine || []).filter((x) => exerciseById(x.id) && !isCardio(exerciseById(x.id)));
@@ -1492,7 +1494,7 @@ function baselineSummary(b) {
 function youView() {
   const p = S.profile;
   const t = today();
-  const eq = { gym: 'Gym', home: 'Home with dumbbells' }[p.equipment];
+  const eq = { gym: 'Gym', home: 'Home with dumbbells', bw: 'Bodyweight only' }[p.equipment];
   const rows = [
     ['Age', `${C.ageNow(p, t)}`],
     ['Height', fmtHeight(p.heightCm, U().len)],
@@ -1832,7 +1834,7 @@ function customExSheet(sh) {
   return `<form data-form="custom-ex" data-ctx="${sh.ctx}" novalidate>
     ${field('ce-name', 'Name', `<input id="ce-name" name="ce-name" maxlength="50" value="${esc(sh.name || '')}">`)}
     <fieldset class="field"><legend>Main muscle it works</legend>${seg('ce-m', [...MUSCLES.map((m) => [m.id, m.name]), [CARDIO.id, CARDIO.name]], sh.m || 'chest')}</fieldset>
-    <fieldset class="field"><legend>How you track it</legend>${seg('ce-load', [['kg', 'Weight and reps'], ['s', 'Seconds'], ['min', 'Minutes']], 'kg')}<p class="hint">Cardio is always tracked in minutes.</p></fieldset>
+    <fieldset class="field"><legend>How you track it</legend>${seg('ce-load', [['kg', 'Weight and reps'], ['bw', 'Reps only'], ['s', 'Seconds'], ['min', 'Minutes']], 'kg')}<p class="hint">Cardio is always tracked in minutes.</p></fieldset>
     <div class="form-actions"><button class="btn btn-primary" type="submit">Add exercise</button></div>
   </form>`;
 }
@@ -3112,7 +3114,7 @@ const FORMS = {
     // Exercises you add get a standard rep range for how you track them, and fit any equipment
     const ex = {
       id: uid('u'), name, m, k: ['biceps', 'triceps', 'calves', 'abs', 'forearms'].includes(m) ? 'i' : 'c', load,
-      rr: load === 's' ? [20, 60] : [8, 12], step: 2.5, eq: ['gym', 'home'], custom: true,
+      rr: load === 's' ? [20, 60] : load === 'bw' ? [8, 15] : [8, 12], step: 2.5, eq: ['gym', 'home', 'bw'], custom: true,
     };
     if (m === CARDIO.id || load === 'min') Object.assign(ex, { m: CARDIO.id, k: 'c', load: 'min', rr: [15, 40], met: [4, 6, 8] });
     customs.push(ex);
