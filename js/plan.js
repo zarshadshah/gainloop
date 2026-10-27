@@ -571,7 +571,7 @@ export function advice(ex, history, fmtW, rr = ex.rr, stop = '1 or 2', week = nu
   const [lo, hi] = rr;
   const mode = week?.load || 'progress';
   if (!last || !last.reps?.length) {
-    if (ex.load === 'kg' && week?.start) return { kg: week.start, text: `First time: start at ${fmtW(week.start)}, worked out from your one rep max tests. It is a weight you could lift about ${hi + 2} times. Stop each set ${stop} reps before you'd fail, and go a little lighter or heavier if it feels off.` };
+    if (ex.load === 'kg' && week?.start) return { kg: week.start, text: '' };
     if (ex.load === 'kg') return { kg: null, text: `First time: pick a weight you could lift about ${hi + 2} times, and stop each set ${stop} reps before you'd fail.` };
     if (ex.load === 's') return { kg: null, text: `First time: hold for as long as you can with good form, up to ${hi} seconds.` };
     return { kg: null, text: `First time: do as many good reps as you can, stopping ${stop} short of failure.` };

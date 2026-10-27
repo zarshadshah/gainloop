@@ -156,11 +156,11 @@ In Codespaces, open the forwarded port 8080. Edit a file, save, refresh.
 - **Add an ingredient:** add it to `INGREDIENTS` with per-100 g `kcal`, `p`, `c`, `f`, a `shop` group and the flags the diet rules check: `meat: 'chicken'` (or `'beef'`, `'lamb'`, `'pork'`), `fish`, `dairy`, `egg`, `gluten`, `nuts`, `soy`, `sesame`, `honey`, `alcohol`. A missing flag means a rule can't catch it, so be thorough.
 - **Add cardio:** copy a cardio entry at the end of `EXERCISES` (`m: 'cardio'`, `load: 'min'`, `rr` in minutes, `met` for easy, moderate and hard from the Compendium), then give it a guide and pictures like any exercise.
 - **Add an exercise:** copy an entry in `EXERCISES` in `js/data/exercises.js`. `m` is the muscle, `k` is `c` (compound) or `i` (isolation), `eq` lists the equipment it suits, `rr` is the rep range and `step` the weight jump in kg. Add `auto: false` if the planner should only use it for people who already do it. Then give it a guide in `js/data/guides.js` and pictures in `js/data/pictures.js` (copy two pictures into `img/ex/` named `<name>-1.webp` and `<name>-2.webp`, and a small one into `img/ex/t/<name>.webp`). Without pictures it still works, it just shows the steps.
-- **Change a health rule:** `healthRules()` in `js/health.js` decides what each condition changes, and `STRESS` lists the exercises left out for each sore joint. The How the numbers work screen in `js/app.js` explains them, so update both.
-- **Change the wellness rules:** `assess()` in `js/wellness.js` turns answers into a fresh, normal, tired or lighter week, `weekSettings()` says how hard each week is, and `loadDelta()` in `js/load.js` says how far the load moves (never more than `MAX_CHANGE`, 5%). The How the numbers work screen explains it to the user, so change the text there too.
+- **Change a health rule:** `healthRules()` in `js/health.js` decides what each condition changes, and `STRESS` lists the exercises left out for each sore joint.
+- **Change the wellness rules:** `assess()` in `js/wellness.js` turns answers into a fresh, normal, tired or lighter week, `weekSettings()` says how hard each week is, and `loadDelta()` in `js/load.js` says how far the load moves (never more than `MAX_CHANGE`, 5%).
 - **Change the exercise count:** `MAX_EXERCISES` and `MAX_SETS` at the top of `js/plan.js`. Every session is filled to exactly `MAX_EXERCISES` (step 6b of `buildProgram()`). If you change how plans are built, bump `PROGRAM_VERSION` so saved plans are rebuilt once.
 - **Change the load groups or the 5% limit:** `LOAD_GROUPS`, `GROUP_OF` and `MAX_CHANGE` in `js/load.js`.
-- **Change the calorie rules:** `calorieDecision()` in `js/calc.js`. The same rules are explained on the How the numbers work screen in `js/app.js`, so update both.
+- **Change the calorie rules:** `calorieDecision()` in `js/calc.js`.
 - **Change colours or fonts:** the tokens at the top of `css/app.css`.
 
 ### When you add a file

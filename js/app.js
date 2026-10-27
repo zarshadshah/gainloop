@@ -299,7 +299,7 @@ function setupView(mode = 'new') {
       <fieldset class="field"><legend>Lifting experience</legend>${choices('experience', Object.entries(C.EXPERIENCE).map(([k, v]) => [k, v.name, v.desc]), d.experience)}</fieldset>
       <fieldset class="field"><legend>Days a week</legend>${seg('days', [2, 3, 4, 5, 6].map((n) => [n, String(n)]), d.days)}</fieldset>
       <fieldset class="field"><legend>Time per session</legend>${seg('minutes', [45, 60, 75, 90].map((n) => [n, `${n} min`]), d.minutes)}</fieldset>
-      <fieldset class="field"><legend>Where you train</legend>${choices('equipment', [['gym', 'A gym', 'Barbells, dumbbells, cables and machines.'], ['home', 'Home with dumbbells', 'A set of dumbbells and a bench.'], ['bw', 'Bodyweight only', 'No equipment. A backpack and a chair help.']], d.equipment)}</fieldset>
+      <fieldset class="field"><legend>Where you train</legend>${choices('equipment', [['gym', 'A gym', 'Barbells, dumbbells, cables and machines.'], ['home', 'Home with dumbbells', 'A set of dumbbells and a bench.']], d.equipment)}</fieldset>
       <div class="field check"><input type="checkbox" id="pullupBar" name="pullupBar"${d.pullupBar ? ' checked' : ''}><label for="pullupBar">I have a pull-up bar at home</label></div>`;
   } else if (name === 'exercises') {
     body = `
@@ -1018,7 +1018,7 @@ function sessionView(sid) {
         ${base ? `<p class="week-note">This week instead of ${esc(lcFirst(base.name))}. Your muscles are sore, and that one works them at full stretch, which is hardest on sore muscles. You already know this one, so it won’t add soreness of its own. <button class="btn-link" data-act="wellness-keep" data-ex="${base.id}">Do ${esc(lcFirst(base.name))} anyway</button></p>` : ''}
         <button class="ex-guide" data-act="guide" data-ex="${ex.id}">${thumb(ex.id)}<span class="ex-guide-text"><span>How to do it</span><span class="fine">${GUIDES[ex.id] ? esc(kitText(ex.id)) : 'Steps and a video link'}</span></span></button>
         ${sore.length ? `<p class="warn">${I.alert} ${sl.mine ? 'This one stays because you already do it.' : Object.values(S.swaps).includes(ex.id) ? 'You swapped this one in.' : 'Nothing else fits your equipment here.'} Go lighter if your ${esc(andList(sore))} ${hurtVerb(sore)}, or swap it.</p>` : ''}
-        <p class="advice">${esc(adv.text)}</p>
+        ${adv.text ? `<p class="advice">${esc(adv.text)}</p>` : ''}
         ${rx ? `<p class="fine">Load ${fLoad(rx.load)}, last ${rx.last.recent ? 'week' : 'time'} ${fLoad(rx.last.load)}</p>` : ''}
         ${last ? `<p class="fine">Last time, ${fmtDate(last.d, 'day')}: ${ex.load === 'kg' ? `${last.kg ? fLift(last.kg) : 'bodyweight'} × ` : ''}${last.reps.join(', ')}${ex.load === 's' ? ' s' : ''}</p>` : ''}
         <div class="log">
@@ -1531,7 +1531,6 @@ function youView() {
     <section class="section">
       <ul class="list">
         <li><a class="row row-link" href="#changes"><span class="row-main">Plan changes and why</span>${I.next}</a></li>
-        <li><a class="row row-link" href="#maths"><span class="row-main">How the numbers work</span>${I.next}</a></li>
       </ul>
     </section>
     <section class="section">
@@ -1562,88 +1561,6 @@ function changesView() {
       <p class="tl-head"><strong>${kind[c.kind] || 'Update'}</strong> <span class="muted">${fmtDate(c.d, 'full')}</span></p>
       <ul>${c.items.map((it) => `<li><p class="tl-text">${esc(it.text)}</p>${it.why ? `<p class="fine">${esc(it.why)}</p>` : ''}</li>`).join('')}</ul>
     </li>`).join('')}</ol>` : '<p class="empty">No changes yet.</p>'}`;
-}
-
-function mathsView() {
-  return `${backLink(S.profile ? '#you' : '#welcome', S.profile ? 'You' : 'Start')}
-    <header class="screen-head"><h1 class="title">How the numbers work</h1></header>
-    <section class="section prose">
-      <h2 class="h2">Body fat</h2>
-      <p>Estimated from your height, neck and waist (plus hips for women) with the US Navy tape formula. It's usually within a few percent of a scan, and the trend matters more than the exact number. If you have a scan result, enter it and it takes over.</p>
-      <h2 class="h2">Targets from your frame</h2>
-      <p>Casey Butt studied drug-free bodybuilders and found that wrist and ankle size, along with height, predict how much muscle someone can carry. Gainloop uses his published formulas for maximum lean mass and for chest, arm, forearm, neck, thigh and calf at about 8 to 10% body fat. They are upper estimates and run high for most people, so your aim starts at 90% of them. They were built from men's data, so women get trend tracking instead.</p>
-      <p>Because tape readings include fat, lean mass is the fairer measure of progress. It's compared with the ceiling at your current body fat.</p>
-      <h2 class="h2">Which muscles get extra sets</h2>
-      <p>Each measured site is compared with its target. Any site at least 3 points behind the middle of the pack becomes a priority, up to two at a time. Arms map to triceps and biceps, chest to chest and back, thighs to quads and hamstrings. Every other muscle keeps a minimum number of sets.</p>
-      <h2 class="h2">Calories</h2>
-      <p>Your starting point is the Mifflin-St Jeor equation, adjusted for your daily activity and training days. Building muscle adds 150 to 300 kcal, recomp stays at maintenance and leaning out takes off up to 20%. Calories never go below your resting burn or 1,600 kcal for men and 1,400 for women.</p>
-      <p>Every two weeks, a check-in compares how fast your 7-day average weight is moving with the target pace: about 1.25% of body weight a month for newer lifters, 0.75% with some experience and 0.4% when experienced. The first change waits until you have about 3 weeks of weigh-ins. If you're more than 0.1 kg a week off pace (or a third of the target pace, if that's bigger), calories move by half the gap, at most 250 kcal at a time. If weight is on pace but your waist is growing while arms and chest aren't, calories come down 100.</p>
-      <h2 class="h2">Training</h2>
-      <p>Weekly sets start at 10 to 14 per major muscle depending on experience, then get fitted to your days and session length.</p>
-      <p>Every session has exactly ${MAX_EXERCISES} exercises, followed by a separate cardio finisher, and each exercise at most ${MAX_SETS} sets. A muscle gets one exercise in a session, or two when there’s room, such as a pull-down and a row for your back. Places go out in order of importance: your priorities first, then quads, chest and back, hamstrings and shoulders, then arms, calves, glutes and abs. If a session still has fewer than ${MAX_EXERCISES}, a muscle that is short of sets gets one, then a big exercise splits into two, so the session is always full. With very little equipment a session may borrow an exercise from another muscle.</p>
-      <h2 class="h2">Health questionnaire</h2>
-      <p>Setup includes the PAR-Q+ (2025), the Physical Activity Readiness Questionnaire for Everyone, written by the PAR-Q+ Collaboration. It is used in full and unchanged: seven general health questions, and follow-up questions about a medical condition only if you answer YES to one of them. No to all seven means you are cleared. A YES to a follow-up question means you should seek further advice, from an exercise professional or the ePARmed-X+ at www.eparmedx.com, before you push hard. That advice never blocks the app. Your clearance is valid for 12 months, and Gainloop asks again after that. Answers stay on your phone. A heart condition, high blood pressure or asthma answer also switches on those health rules in your plan.</p>
-      <h2 class="h2">Starting strength</h2>
-      <p>Your first weights come from a one rep max (1RM) on seven lifts: bench press, deadlift, squat, lat pulldown, seated row, shoulder press and calf raise (dumbbell versions if you train at home). For each, you lift a weight 1 to 10 times and the 1RM is worked out as weight ÷ (1.0278 − 0.0278 × reps), rounded to the nearest 2.5 kg. It is only trusted up to 10 reps, because the estimate drifts at higher reps.</p>
-      <p>Every other exercise gets a starting weight from how strong it usually is next to those lifts: a leg press is a bit over twice your squat, a dumbbell curl is about a fifth of your row, and so on. If you train with no weights, or a lift has no result, it is estimated from your body weight, your experience and sex, scaled by how strong your other lifts show you are, and kept 10% low. The starting weight is one you could lift about 2 more times than the top of the exercise’s rep range, rounded down to a weight that exists. After your first session, your own logged weights take over and the weekly load rules below apply.</p>
-      <h2 class="h2">Weekly load</h2>
-      <p>Load is weight lifted × reps × sets, added up over the week for three groups: legs (quads, hamstrings, glutes, calves and abs), push (chest, shoulders and triceps) and pull (back, biceps and forearms). Bodyweight exercises count as a share of your body weight, all of it for pull-ups, chin-ups and dips and about two thirds for the rest. Cardio and timed holds aren’t part of it.</p>
-      <p>At the end of each week, Monday to Sunday, Gainloop adds up what you logged. If you logged only part of the plan, that week is scaled up to a full week, as long as you did at least half of it. The next week’s load for each group is then planned to be within ${round(MAX_CHANGE * 100)}% of that, up when you’re progressing and down when you’re deloading. If your plan has changed so much that last week no longer matches what you would repeat, the starting point is the last session of each exercise instead.</p>
-      <p>The load is then shared out over your exercises. The sets stay as planned and the reps change first, one or two more or fewer in a set. Once an exercise reaches the top of its rep range, it moves to the next weight and the reps start again lower, which is double progression. A change of ${round(MAX_CHANGE * 100)}% is small: about one rep on each exercise, or one small weight jump on one of them. An exercise you haven’t logged yet, or have only logged without a weight, is left to you the first time.</p>
-      <h2 class="h2">Weekly wellness check</h2>
-      <p>Every Sunday, five questions on fatigue, sleep, muscle soreness, stress and mood, each scored from 5 (best) to 1, so the total runs from 5 to 25. They come from a wellness questionnaire McLean and colleagues used with professional rugby league players, and a systematic review of athlete monitoring found that simple self-reported measures like these track how you’re coping with training better than common objective measures such as blood tests and heart rate.</p>
-      <p>Your score is compared with your normal: the average of up to 6 recent check-ins once you have 3, kept between 13 and 19, and 15 until then. Three or more above normal is a fresh week, from 1 below to 2 above is normal, 2 to 4 below is tired, and more than that, or a score of 9 or less, is a lighter week. Any answer of 1 makes it a tired week at most, a fresh week needs no answer below 3, and a second tired week in a row becomes a lighter week.</p>
-      <ul class="notes">
-        <li><strong>Fresh:</strong> load up ${round(MAX_CHANGE * 100)}%, and stop 1 rep before failure (1 or 2 if you’re newer to lifting). Leaning out, it goes up ${round(MAX_CHANGE * 50, 1)}% because a calorie deficit limits recovery.</li>
-        <li><strong>Normal:</strong> load up ${round(MAX_CHANGE * 50, 1)}%, and stop 1 or 2 reps before failure.</li>
-        <li><strong>Tired:</strong> load down ${round(MAX_CHANGE * 50, 1)}%, and stop 2 or 3 reps before failure.</li>
-        <li><strong>Lighter:</strong> load down ${round(MAX_CHANGE * 100)}%, and stop 3 or 4 reps before failure. Leaning out, the weights stay where they can and the reps come down, because heavy weights help you keep muscle in a deficit.</li>
-      </ul>
-      <p>The size of the change is kept small on purpose: a deload of this kind follows an international expert consensus on deloading, which says to cut the load, train further from failure and keep the familiar main lifts. All six exercises stay in every session.</p>
-      <p>Single answers matter too. With restless sleep or insomnia, or when you’re stressed, your load doesn’t go up that week and sets stop 2 or 3 reps from failure: poor sleep can lower how much you can lift, and stress slows recovery from hard training. With sore muscles, exercises that load a muscle at full stretch, like Romanian deadlifts, split squats and flyes, cause the most soreness, so each swaps for a gentler one you have already logged. A new exercise would bring soreness of its own. Your health rules always win: with high blood pressure or a heart condition, sets never go closer to failure than they allow.</p>
-      <p>Two weeks running of low scores for sleep, stress or mood bring a gentle note that it can help to talk to someone. The answers stay on your phone and are never sent anywhere.</p>
-      <h2 class="h2">Exercises you already do</h2>
-      <p>Your exercises go to the front of the list for their muscle, so they’re picked first wherever your equipment allows. If one doesn’t fit its usual place, like a chin-up when your biceps get curls, it takes the place of one of the planner’s own picks for that muscle. If you do more exercises for a muscle than it has places in your week, the extras are left out and the app says why.</p>
-      <p>Exercises you add yourself get a standard rep range for how you track them: 8 to 12 reps with weights, 8 to 15 with bodyweight, or 20 to 60 seconds for holds.</p>
-      <h2 class="h2">Meal ideas from the AI</h2>
-      <p>When you type the food you have, Gainloop asks an AI model running on Cloudflare (OpenAI’s open gpt-oss model on Workers AI) for meals that use only those foods, plus oil, salt, spices, herbs, garlic and lemon. It sends your food list, the calories and protein for that meal and your food rules, such as halal, allergies and carb limits. Your health conditions themselves aren’t sent, only what they change about food. Nothing else is sent, and Cloudflare doesn’t use it to train AI.</p>
-      <p>Before you see an idea, the app adds up its calories again from each ingredient, sizes the portion to that meal’s share of your day (breakfast about a quarter, lunch and dinner about 30% each, a snack 15%), and checks every ingredient against your food rules. Ideas that break a rule are left out, and ideas that use a food you didn’t list are kept apart. The AI’s numbers are estimates, so check labels if you count closely.</p>
-      <p>Amounts of rice, pasta, noodles, oats, lentils, oil, butter, eggs and chicken are also checked against typical label values. The usual slip is counting dry rice as if it were cooked, which would have you cook nearly three times too much, so the app gives the dry weight that matches the calories instead. Foods the steps never use are taken out before the meal is sized, the steps are checked against your food rules too, and ideas that stir sweet foods like oats or banana into a meat or fish dish are left out.</p>
-      <h2 class="h2">Cooking from a list</h2>
-      <p>The tick list works on your phone without the AI: a protein food, a carb and vegetables for lunch and dinner, and simpler combinations for breakfast and snacks, sized with the rest of the day to hit your calories. It only shows meals you can make from what you tick. Recipes you’re one food short of are kept in a separate list for your next shop.</p>
-      <h2 class="h2">Food log and getting back on track</h2>
-      <p>Your meal plan counts as eaten unless you log something different: a meal you skipped, something else instead, or something extra. Each entry keeps what was planned and what you ate, so the difference stays right even if the plan changes later. The AI can estimate what something was, and you can change its numbers.</p>
-      <p>When what you logged in the last week adds up to more than about 200 kcal either way, Gainloop offers to spread it over 3 days, a week or 2 weeks, starting tomorrow. The suggestion is the shortest that keeps each day within 10% of your usual calories. No day ever moves more than 15%, or below your calorie floor. Protein stays the same, and the change comes from carbs and fat (45% from carbs with diabetes, 60% otherwise). If you ate more than planned, up to 3 cardio sessions a week can cover up to half of it, so the food change is smaller. Anything a sensible change can’t cover is left to your check-ins, which adjust from your real weight. A short coach’s note is written by the AI from the plan, but the numbers are always worked out by the app.</p>
-      <h2 class="h2">Cardio</h2>
-      <p>Every session ends with 10 minutes of cardio on top of its 6 exercises: easy while building muscle, moderate for recomp and leaning out. Cardio you add yourself takes the place of the default walk or bike, in up to two sessions a week each. Calories burned are estimated from the 2024 Adult Compendium of Physical Activities: the activity’s energy cost (MET) minus resting, times your weight and the time. With a sore knee, back or shoulder, running, jumping and rowing are flagged, and back-on-track cardio picks something easier on the joints. With a heart condition, cardio is kept easy to moderate.</p>
-      <h2 class="h2">Health conditions</h2>
-      <p>These follow general guidance and are deliberately cautious. Your doctor’s or care team’s advice comes first.</p>
-      <ul class="notes">
-        <li><strong>Diabetes:</strong> carbs are capped at about 45% of calories, a moderate limit, since there’s no single right amount. Protein, then fat, make up the rest. Meals with added sugar are left out, the planner leans toward meals where carbs are no more than half the calories, and every meal shows its carbs. You’re reminded to check your glucose before training, because training can lower it, especially if you take insulin or a sulfonylurea.</li>
-        <li><strong>High blood pressure and heart conditions:</strong> every set is at least 8 reps (10 with a heart condition), stopping 2 to 3 reps short of failure, with reminders not to hold your breath. With high blood pressure, meals built on salty cheese are swapped out while each meal slot keeps at least 3 options.</li>
-        <li><strong>Kidney disease:</strong> protein is set to 0.8 g per kg of body weight, the amount the KDIGO kidney guideline suggests for adults with stage 3 to 5 chronic kidney disease who aren’t on dialysis, and protein shakes are left out.</li>
-        <li><strong>Coeliac disease:</strong> gluten is a hard rule, including standard oats.</li>
-        <li><strong>High cholesterol:</strong> meals built on fatty cheese, paneer or lamb are swapped out while there are other options.</li>
-        <li><strong>Pain:</strong> exercises that tend to load your lower back, knees or shoulders are left out whenever that muscle has another option. Ones you already do stay in, with a reminder to go lighter.</li>
-      </ul>
-      <h2 class="h2">Sources</h2>
-      <ul class="sources">
-        <li><a href="https://weighttraining.nz/cb_calculator.php" target="_blank" rel="noopener">Casey Butt lean mass formula</a></li>
-        <li><a href="https://mennohenselmans.com/ffmi-calculator/" target="_blank" rel="noopener">Menno Henselmans on FFMI and the formula's limits</a></li>
-        <li><a href="https://pubmed.ncbi.nlm.nih.gov/2305711/" target="_blank" rel="noopener">Mifflin-St Jeor equation (1990)</a></li>
-        <li><a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5317029/" target="_blank" rel="noopener">Key points from the American Diabetes Association’s exercise guidance</a></li>
-        <li><a href="https://professional.heart.org/en/science-news/resistance-exercise-training-in-individuals-with-and-without-cardiovascular-disease-2023-update" target="_blank" rel="noopener">American Heart Association: resistance training with and without heart disease (2023)</a></li>
-        <li><a href="https://kdigo.org/guidelines/ckd-evaluation-and-management/" target="_blank" rel="noopener">KDIGO 2024 guideline for chronic kidney disease</a></li>
-        <li><a href="https://pacompendium.com/wp-content/uploads/2024/01/2024-adult-compendium_1_2024.pdf" target="_blank" rel="noopener">2024 Adult Compendium of Physical Activities</a></li>
-        <li><a href="https://pubmed.ncbi.nlm.nih.gov/20861526/" target="_blank" rel="noopener">McLean and others (2010): fatigue in rugby league players, with the wellness questionnaire</a></li>
-        <li><a href="https://bjsm.bmj.com/content/50/5/281" target="_blank" rel="noopener">Saw, Main and Gastin (2016): self-reported measures in athlete monitoring, a systematic review</a></li>
-        <li><a href="https://doi.org/10.1186/s40798-023-00633-0" target="_blank" rel="noopener">Bell and others (2023): an international Delphi consensus on deloading</a></li>
-        <li><a href="https://openrepository.aut.ac.nz/items/92cefeac-7c32-44f1-bfbc-f48f4a5dd8cf/full" target="_blank" rel="noopener">Helms and others (2016): training by reps in reserve</a></li>
-        <li><a href="https://pubmed.ncbi.nlm.nih.gov/29422383/" target="_blank" rel="noopener">Knowles and others (2018): poor sleep and muscle strength</a></li>
-        <li><a href="https://pubmed.ncbi.nlm.nih.gov/24343323/" target="_blank" rel="noopener">Stults-Kolehmainen and others (2014): stress slows recovery after hard training</a></li>
-        <li><a href="https://developers.cloudflare.com/workers-ai/platform/privacy/" target="_blank" rel="noopener">Cloudflare Workers AI: how your data is used</a></li>
-      </ul>
-    </section>`;
 }
 
 // ----- Check-in -----
@@ -1806,7 +1723,7 @@ function wellnessView(param) {
         <span class="bar-value">${e.total}</span>
       </div>`).join('')}</div>
     </section>` : ''}
-    <p class="fine">The questions come from a wellness questionnaire used with athletes. Your score is compared with your own normal, the average of your recent weeks, because everyone answers a little differently. <a class="link" href="#maths">How it works</a></p>`;
+    <p class="fine">The questions come from a wellness questionnaire used with athletes. Your score is compared with your own normal, the average of your recent weeks, because everyone answers a little differently.</p>`;
 }
 
 const fmtScore = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
@@ -2215,7 +2132,6 @@ const VIEWS = {
   you: youView,
   restore: restoreView,
   changes: changesView,
-  maths: mathsView,
   checkin: checkinView,
   myex: myExView,
   library: libraryView,
@@ -2230,7 +2146,7 @@ const TAB_OF = {
   today: 'today', checkin: 'today', ontrack: 'today', log: 'today', wellness: 'today', body: 'body', measure: 'body', frame: 'body', bodyfat: 'body',
   train: 'train', session: 'train', myex: 'train', library: 'train',
   eat: 'eat', shop: 'eat', mealnew: 'eat', rules: 'eat', pantry: 'eat',
-  you: 'you', profile: 'you', parq: 'you', baseline: 'you', restore: 'you', changes: 'you', maths: 'you', health: 'you',
+  you: 'you', profile: 'you', parq: 'you', baseline: 'you', restore: 'you', changes: 'you', health: 'you',
 };
 const TITLES = { today: 'Today', body: 'Body', train: 'Train', eat: 'Eat', you: 'You' };
 
@@ -2239,7 +2155,7 @@ function route() {
   const [name, ...rest] = h.split('-');
   let r = { name: name || '', param: rest.join('-') };
   if (!S.profile) {
-    if (!['welcome', 'setup', 'restore', 'maths'].includes(r.name)) r = { name: 'welcome', param: '' };
+    if (!['welcome', 'setup', 'restore'].includes(r.name)) r = { name: 'welcome', param: '' };
   } else if (!VIEWS[r.name] || r.name === 'welcome' || r.name === 'setup') {
     r = { name: 'today', param: '' };
   }
@@ -2424,7 +2340,7 @@ function infoSheet(topic) {
       title: 'How targets work',
       html: `<p>Your wrist and ankle are mostly bone, so they show how big your frame is. Casey Butt's formulas turn those and your height into the measurements a drug-free lifter could reach at about 8 to 10% body fat after many years.</p>
         <p>They're upper estimates and run high, which is why your aim is a share of them. The yellow tape fills up to your latest reading and the notch marks your aim.</p>
-        <p>Any site at least 3 points behind the others becomes a priority and those muscles get extra sets.</p><a class="link" href="#maths">How the numbers work</a>`,
+        <p>Any site at least 3 points behind the others becomes a priority and those muscles get extra sets.</p>`,
     };
   }
   if (topic === 'lean') {
