@@ -178,22 +178,19 @@ export function weekSummary(settings, profile) {
 // Exercises that load a muscle at full stretch cause the most soreness. When you're sore, each can swap for
 // a gentler one for the same muscle, but only one you already know: a new exercise brings its own soreness.
 export const STRETCH = {
-  rdl: ['leg-curl', 'slider-curl'],
-  'db-rdl': ['leg-curl', 'slider-curl'],
-  'sl-rdl': ['slider-curl', 'leg-curl'],
-  deadlift: ['leg-curl', 'slider-curl'],
-  nordic: ['slider-curl', 'leg-curl'],
+  rdl: ['leg-curl'],
+  'db-rdl': ['leg-curl'],
+  'sl-rdl': ['leg-curl'],
+  deadlift: ['leg-curl'],
   'split-squat': ['leg-press', 'goblet-squat', 'step-up', 'leg-ext'],
   'reverse-lunge': ['goblet-squat', 'step-up', 'leg-press'],
-  'db-fly': ['machine-press', 'db-bench', 'push-up'],
+  'db-fly': ['machine-press', 'db-bench'],
   'cable-fly': ['machine-press', 'db-bench'],
   'pec-deck': ['machine-press', 'db-bench'],
-  dips: ['machine-press', 'db-bench', 'push-up'],
-  'deficit-push-up': ['push-up', 'feet-up-push-up'],
-  'incline-curl': ['db-curl', 'cable-curl', 'hammer-curl', 'backpack-curl'],
+  'incline-curl': ['db-curl', 'cable-curl', 'hammer-curl'],
   'db-pullover': ['straight-arm', 'cable-row', 'cs-row'],
   'oh-cable-ext': ['pushdown', 'skull-crusher'],
-  'db-oh-ext': ['pushdown', 'diamond-push-up', 'bench-dip'],
+  'db-oh-ext': ['pushdown'],
 };
 
 // Exercises you have logged in the last 12 weeks. A swapped-in exercise needs a history, so its weight

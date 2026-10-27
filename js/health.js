@@ -27,9 +27,9 @@ export const PAIN = [
 
 // Exercises that tend to load a sore area. They're left out when there is another option for that muscle.
 export const STRESS = {
-  knee: ['squat', 'hack-squat', 'split-squat', 'reverse-lunge', 'box-pistol', 'leg-ext', 'nordic', 'run', 'treadmill-run', 'skipping', 'jumping-jacks', 'burpees', 'stair-climber'],
-  back: ['deadlift', 'rdl', 'db-rdl', 'bb-row', 'backpack-row', 'squat', 'kb-swing', 'ohp', 'standing-calf', 'superman', 'rower', 'burpees'],
-  shoulder: ['dips', 'bench', 'incline-bench', 'cg-bench', 'ohp', 'db-press', 'pike-push-up', 'feet-up-pike', 'bench-dip', 'db-pullover', 'deficit-push-up', 'burpees', 'mountain-climbers'],
+  knee: ['squat', 'hack-squat', 'split-squat', 'reverse-lunge', 'leg-ext', 'run', 'treadmill-run', 'skipping', 'jumping-jacks', 'burpees', 'stair-climber'],
+  back: ['deadlift', 'rdl', 'db-rdl', 'bb-row', 'squat', 'kb-swing', 'ohp', 'standing-calf', 'rower', 'burpees'],
+  shoulder: ['bench', 'incline-bench', 'cg-bench', 'ohp', 'db-press', 'db-pullover', 'burpees', 'mountain-climbers'],
 };
 
 export const blankHealth = () => ({ diabetes: 'none', conditions: [], pain: [], other: '' });
