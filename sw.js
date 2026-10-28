@@ -1,7 +1,7 @@
 // Gainloop service worker.
 // Network first: when you're online you always get the latest files you deployed,
 // and a copy is kept so the app still opens offline.
-const CACHE = 'gainloop-v9';
+const CACHE = 'gainloop-v10';
 
 // The page itself is kept as './' only: some hosts (Cloudflare Pages) send /index.html on to /
 const SHELL = [

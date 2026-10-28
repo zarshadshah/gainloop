@@ -103,7 +103,7 @@ export const PICTURES = {
   'stair-climber': { f: 'stair-climber', mode: 'still' },
   skipping: { f: 'jump-rope', mode: 'still' },
   'jumping-jacks': { f: 'jumping-jacks' },
-  burpees: { f: 'burpees', mode: 'seq', n: 4, note: 'The four steps: stand, hands down to the push-up position, chest to the floor, then jump up with your arms overhead. Step back instead of jumping to make it easier.' },
+  burpees: { f: 'burpees', mode: 'seq', n: 5, note: 'Drawn from the side, in order: stand, squat and put your hands down, kick your feet back to the push-up position, jump your feet back in, then jump up with your arms overhead. Step instead of jumping to make it easier.' },
   'mountain-climbers': { f: 'mountain-climbers' },
 };
 
