@@ -108,7 +108,7 @@ export function baselineFor(state, group, ws) {
   return null;
 }
 
-// How much the load moves this week, from the wellness check. Always within ±5%.
+// How much the load moves this week: up 2.5% most weeks, down 5% in a lighter week. Always within ±5%.
 export function loadDelta(band, opts = {}) {
   let d = { fresh: MAX_CHANGE, normal: MAX_CHANGE / 2, tired: -MAX_CHANGE / 2, lighter: -MAX_CHANGE }[band] ?? MAX_CHANGE / 2;
   if (opts.lean && d > MAX_CHANGE / 2) d = MAX_CHANGE / 2; // a calorie deficit slows recovery
@@ -181,7 +181,7 @@ function solve(cs, base, target, keepWeight) {
 }
 
 // A week's plan for the three groups. sessions: this week's sessions (with swaps applied), in order.
-// ctx: { settings (from the wellness check), rangeOf(ex) -> [lo, hi], t (today) }
+// ctx: { settings (from week.js), rangeOf(ex) -> [lo, hi], t (today) }
 // Returns { groups, rx } where rx maps `${sessionId}:${slotIndex}` to the weight, reps and load for that exercise.
 export function planWeek(state, sessions, ctx) {
   const t = ctx.t;

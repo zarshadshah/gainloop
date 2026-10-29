@@ -2,6 +2,7 @@
 // m: main muscle | k: 'c' compound or 'i' isolation | eq: where you can do it (gym, home = dumbbells + bench, bw = bodyweight)
 // bar: needs a pull-up bar outside the gym | load: 'kg' weight, 'bw' bodyweight reps, 's' seconds
 // rr: rep range (seconds for load 's') | step: usual weight jump in kg | heavy: long rest | next: harder bodyweight version
+// easier: an easier version of the exercise it leads to in next (so that one is still given to beginners)
 // auto: false means the planner only uses it when you say you already do it (it stays in the library and search)
 
 export const MUSCLES = [
@@ -37,12 +38,18 @@ export const EXERCISES = [
   { id: 'db-bench', name: 'Dumbbell bench press', m: 'chest', k: 'c', eq: ['gym', 'home'], load: 'kg', rr: [8, 12], step: 2, cue: 'Lower until the dumbbells are level with your chest, then press them up together.' },
   { id: 'incline-db', name: 'Incline dumbbell press', m: 'chest', k: 'c', eq: ['gym', 'home'], load: 'kg', rr: [8, 12], step: 2, cue: 'Bench at about 30 degrees. Lower to your upper chest with elbows slightly tucked.' },
   { id: 'machine-press', name: 'Machine chest press', m: 'chest', k: 'c', eq: ['gym'], load: 'kg', rr: [8, 12], step: 2.5, cue: 'Set the seat so the handles line up with mid-chest. Control the way back.' },
-  { id: 'cable-fly', name: 'Cable fly', m: 'chest', k: 'i', eq: ['gym'], load: 'kg', rr: [10, 15], step: 2.5, cue: 'Soft elbows, bring your hands together in a wide hug and squeeze for a second.' },
+  { id: 'cable-fly', name: 'Cable fly (high pulley)', m: 'chest', k: 'i', eq: ['gym'], load: 'kg', rr: [10, 15], step: 2.5, cue: 'Soft elbows, bring your hands together in a wide hug and squeeze for a second.' },
   { id: 'db-fly', name: 'Dumbbell fly', m: 'chest', k: 'i', eq: ['gym', 'home'], load: 'kg', rr: [10, 15], step: 2, cue: 'Lower in a wide arc until you feel a stretch across your chest, no further.' },
   { id: 'push-up', name: 'Push-up', m: 'chest', k: 'c', eq: ['home', 'bw'], load: 'bw', rr: [8, 20], next: 'feet-up-push-up', cue: 'Body in one straight line, lower your chest to just above the floor.' },
   { id: 'feet-up-push-up', name: 'Feet-elevated push-up', m: 'chest', k: 'c', eq: ['home', 'bw'], load: 'bw', rr: [6, 15], next: 'deficit-push-up', cue: 'Feet on a chair or sofa. Keep your hips from sagging.' },
   { id: 'deficit-push-up', name: 'Deficit push-up', m: 'chest', k: 'c', eq: ['home', 'bw'], load: 'bw', rr: [6, 15], cue: 'Hands on two sturdy blocks or plates so your chest can sink lower than your hands.' },
   { id: 'dips', name: 'Dips', m: 'chest', k: 'c', eq: ['gym'], load: 'bw', rr: [6, 12], cue: 'Lean forward slightly and lower until your upper arms are about level with the floor.' },
+  { id: 'decline-bench', name: 'Decline bench press', m: 'chest', k: 'c', eq: ['gym'], load: 'kg', rr: [6, 10], step: 2.5, heavy: true, auto: false, cue: 'Bench declined about 15 degrees. Lower the bar to your lower chest and press up.' },
+  { id: 'kneeling-push-up', name: 'Push-up (kneeling)', m: 'chest', k: 'c', eq: ['home', 'bw'], load: 'bw', rr: [8, 20], next: 'push-up', easier: true, auto: false, cue: 'Knees on the floor, a straight line from head to knees, lower your chest to just above the floor.' },
+  { id: 'incline-push-up', name: 'Incline push-up', m: 'chest', k: 'c', eq: ['home', 'bw'], load: 'bw', rr: [8, 20], next: 'push-up', easier: true, auto: false, cue: 'Hands on a bench or sturdy table, body in one straight line. The higher the surface, the easier it is.' },
+  { id: 'cable-press-low', name: 'Cable chest press (low pulley)', m: 'chest', k: 'c', eq: ['gym'], load: 'kg', rr: [8, 12], step: 2.5, auto: false, cue: 'Handles start low. Press up and forward in an arc to your upper chest, then return slowly.' },
+  { id: 'cable-press-high', name: 'Cable chest press (high pulley)', m: 'chest', k: 'c', eq: ['gym'], load: 'kg', rr: [8, 12], step: 2.5, auto: false, cue: 'Handles start high behind you. Press forward and slightly down, then return until you feel a stretch.' },
+  { id: 'cable-fly-low', name: 'Cable fly (low pulley)', m: 'chest', k: 'i', eq: ['gym'], load: 'kg', rr: [10, 15], step: 2.5, auto: false, cue: 'Soft elbows, sweep your hands up and together to about chin height.' },
 
   // Back
   { id: 'lat-pulldown', name: 'Lat pulldown', m: 'back', k: 'c', eq: ['gym'], load: 'kg', rr: [8, 12], step: 2.5, cue: 'Pull the bar to your upper chest, leading with your elbows.' },
@@ -50,6 +57,10 @@ export const EXERCISES = [
   { id: 'cs-row', name: 'Chest-supported dumbbell row', m: 'back', k: 'c', eq: ['gym', 'home'], load: 'kg', rr: [8, 12], step: 2, cue: 'Chest on an incline bench, row the dumbbells toward your hips.' },
   { id: 'one-arm-row', name: 'One-arm dumbbell row', m: 'back', k: 'c', eq: ['gym', 'home'], load: 'kg', rr: [8, 12], step: 2, cue: 'Hand and knee on the bench, pull the dumbbell toward your hip.' },
   { id: 'bb-row', name: 'Barbell row', m: 'back', k: 'c', eq: ['gym'], load: 'kg', rr: [6, 10], step: 2.5, heavy: true, cue: 'Hinge to about 45 degrees with a flat back and row to your lower ribs.' },
+  { id: 'vbar-row', name: 'V-bar seated row', m: 'back', k: 'c', eq: ['gym'], load: 'kg', rr: [8, 12], step: 2.5, auto: false, cue: 'Sit tall and pull the V-handle to your lower chest with your elbows brushing your sides.' },
+  { id: 'tbar-row', name: 'T-bar row', m: 'back', k: 'c', eq: ['gym'], load: 'kg', rr: [6, 10], step: 2.5, heavy: true, auto: false, cue: 'Hinge forward with a flat back and row the handle to your lower chest.' },
+  { id: 'cg-pulldown', name: 'Close-grip pulldown', m: 'back', k: 'c', eq: ['gym'], load: 'kg', rr: [8, 12], step: 2.5, auto: false, cue: 'Palms facing each other, pull the handle to your upper chest with your elbows down.' },
+  { id: 'bb-shrug', name: 'Barbell shrug', m: 'back', k: 'i', eq: ['gym'], load: 'kg', rr: [10, 15], step: 5, auto: false, cue: 'Lift your shoulders straight up toward your ears, pause, lower slowly. No rolling.' },
   { id: 'pull-up', name: 'Pull-up', m: 'back', k: 'c', eq: ['gym', 'home', 'bw'], bar: true, load: 'bw', rr: [4, 12], cue: 'Start from a dead hang and pull until your chin clears the bar. Use the assisted machine if you need it.' },
   { id: 'backpack-row', name: 'Backpack row', m: 'back', k: 'c', eq: ['bw'], load: 'kg', rr: [10, 15], step: 1, cue: 'Load a backpack, hinge forward with a flat back and row it to your stomach.' },
   { id: 'superman', name: 'Superman', m: 'back', k: 'i', eq: ['home', 'bw'], load: 'bw', rr: [10, 15], cue: 'Lift your arms, chest and legs together and hold for a second at the top.' },
@@ -65,9 +76,13 @@ export const EXERCISES = [
   { id: 'pike-push-up', name: 'Pike push-up', m: 'shoulders', k: 'c', eq: ['home', 'bw'], load: 'bw', rr: [6, 15], next: 'feet-up-pike', cue: 'Hips high, lower the top of your head toward the floor between your hands.' },
   { id: 'feet-up-pike', name: 'Feet-elevated pike push-up', m: 'shoulders', k: 'c', eq: ['home', 'bw'], load: 'bw', rr: [5, 12], cue: 'Feet on a chair, bend at the hips and lower your head toward the floor.' },
   { id: 'bottle-lateral', name: 'Lateral raise with water bottles', m: 'shoulders', k: 'i', eq: ['bw'], load: 'kg', rr: [12, 20], step: 0.5, cue: 'Use two full bottles or bags and stop at shoulder height.' },
+  { id: 'front-raise', name: 'Front raise', m: 'shoulders', k: 'i', eq: ['gym', 'home'], load: 'kg', rr: [12, 20], step: 1, auto: false, cue: 'Raise the dumbbells straight in front to shoulder height without swinging, and lower slowly.' },
+  { id: 'external-rotation', name: 'External rotation', m: 'shoulders', k: 'i', eq: ['gym', 'home'], load: 'kg', rr: [12, 20], step: 0.5, auto: false, cue: 'Elbow tucked to your side and bent to 90 degrees. Rotate your forearm outward with a very light weight.' },
+  { id: 'internal-rotation', name: 'Internal rotation', m: 'shoulders', k: 'i', eq: ['gym', 'home'], load: 'kg', rr: [12, 20], step: 0.5, auto: false, cue: 'Elbow tucked to your side and bent to 90 degrees. Rotate your forearm inward with a very light weight.' },
 
   // Biceps
   { id: 'ez-curl', name: 'EZ-bar curl', m: 'biceps', k: 'i', eq: ['gym'], load: 'kg', rr: [8, 12], step: 2.5, cue: 'Elbows pinned to your sides, curl up, take two seconds to lower.' },
+  { id: 'bb-curl', name: 'Barbell curl', m: 'biceps', k: 'i', eq: ['gym'], load: 'kg', rr: [8, 12], step: 2.5, auto: false, cue: 'Elbows pinned to your sides, curl the bar up and lower it slowly without swinging.' },
   { id: 'db-curl', name: 'Dumbbell curl', m: 'biceps', k: 'i', eq: ['gym', 'home'], load: 'kg', rr: [10, 15], step: 2, cue: 'Curl without swinging and turn your little finger up at the top.' },
   { id: 'incline-curl', name: 'Incline dumbbell curl', m: 'biceps', k: 'i', eq: ['gym', 'home'], load: 'kg', rr: [10, 15], step: 2, cue: 'Lie back on an incline, let your arms hang straight, curl without moving your elbows.' },
   { id: 'cable-curl', name: 'Cable curl', m: 'biceps', k: 'i', eq: ['gym'], load: 'kg', rr: [10, 15], step: 2.5, cue: 'Stand tall, curl the bar to your chest, keep your elbows still.' },
@@ -76,7 +91,8 @@ export const EXERCISES = [
   { id: 'backpack-curl', name: 'Backpack curl', m: 'biceps', k: 'i', eq: ['bw'], load: 'kg', rr: [10, 15], step: 1, cue: 'Hold a loaded backpack by the top handle and curl it up slowly.' },
 
   // Triceps
-  { id: 'pushdown', name: 'Cable pushdown', m: 'triceps', k: 'i', eq: ['gym'], load: 'kg', rr: [10, 15], step: 2.5, cue: 'Elbows tucked, push down until your arms are straight.' },
+  { id: 'pushdown', name: 'Tricep pushdown', m: 'triceps', k: 'i', eq: ['gym'], load: 'kg', rr: [10, 15], step: 2.5, cue: 'Elbows tucked, push down until your arms are straight.' },
+  { id: 'rope-ext', name: 'Rope extension', m: 'triceps', k: 'i', eq: ['gym'], load: 'kg', rr: [10, 15], step: 2.5, auto: false, cue: 'Elbows tucked, push the rope down and pull the ends apart at the bottom.' },
   { id: 'oh-cable-ext', name: 'Overhead cable extension', m: 'triceps', k: 'i', eq: ['gym'], load: 'kg', rr: [10, 15], step: 2.5, cue: 'Face away from the cable and straighten your arms overhead from behind your head.' },
   { id: 'skull-crusher', name: 'EZ-bar skull crusher', m: 'triceps', k: 'i', eq: ['gym'], load: 'kg', rr: [8, 12], step: 2.5, cue: 'Lower the bar to just behind your forehead with elbows pointing up.' },
   { id: 'db-oh-ext', name: 'Overhead dumbbell extension', m: 'triceps', k: 'i', eq: ['gym', 'home'], load: 'kg', rr: [10, 15], step: 2, cue: 'Hold one dumbbell with both hands, lower it behind your head, press up.' },
@@ -86,17 +102,30 @@ export const EXERCISES = [
 
   // Quads
   { id: 'squat', name: 'Back squat', m: 'quads', k: 'c', eq: ['gym'], load: 'kg', rr: [6, 10], step: 2.5, heavy: true, cue: 'Brace, sit down between your heels, knees track over your toes.' },
-  { id: 'leg-press', name: 'Leg press', m: 'quads', k: 'c', eq: ['gym'], load: 'kg', rr: [8, 12], step: 5, cue: 'Lower until your knees come toward your chest without your lower back lifting.' },
+  { id: 'low-bar-squat', name: 'Low bar squat', m: 'quads', k: 'c', eq: ['gym'], load: 'kg', rr: [6, 10], step: 2.5, heavy: true, auto: false, cue: 'Bar across your rear shoulders. Lean forward a little more, hips back, drive up.' },
+  { id: 'front-squat', name: 'Front squat', m: 'quads', k: 'c', eq: ['gym'], load: 'kg', rr: [6, 10], step: 2.5, heavy: true, auto: false, cue: 'Bar on the front of your shoulders, elbows high, sit straight down and keep your chest up.' },
+  { id: 'trap-bar-dl', name: 'Trap bar deadlift', m: 'quads', k: 'c', eq: ['gym'], load: 'kg', rr: [5, 8], step: 5, heavy: true, auto: false, cue: 'Stand in the middle of the bar, chest up, and push the floor away.' },
+  { id: 'leg-press', name: 'Leg press (45 degree)', m: 'quads', k: 'c', eq: ['gym'], load: 'kg', rr: [8, 12], step: 5, cue: 'Lower until your knees come toward your chest without your lower back lifting.' },
   { id: 'hack-squat', name: 'Hack squat', m: 'quads', k: 'c', eq: ['gym'], load: 'kg', rr: [8, 12], step: 5, cue: 'Feet in the middle of the plate, go deep, drive up through the whole foot.' },
   { id: 'goblet-squat', name: 'Goblet squat', m: 'quads', k: 'c', eq: ['gym', 'home'], load: 'kg', rr: [8, 15], step: 2, cue: 'Hold the dumbbell at your chest, sit down and keep your chest up.' },
+  { id: 'db-squat', name: 'Dumbbell squat', m: 'quads', k: 'c', eq: ['gym', 'home'], load: 'kg', rr: [8, 12], step: 2, auto: false, cue: 'A dumbbell in each hand at your sides. Sit between your heels and stand tall.' },
+  { id: 'sumo-squat', name: 'Sumo squat', m: 'quads', k: 'c', eq: ['gym', 'home'], load: 'kg', rr: [8, 15], step: 2, auto: false, cue: 'Wide stance, toes out, one dumbbell hanging between your legs. Sit straight down.' },
   { id: 'split-squat', name: 'Bulgarian split squat', m: 'quads', k: 'c', eq: ['gym', 'home', 'bw'], load: 'kg', rr: [8, 12], step: 2, cue: 'Back foot on a bench, lower straight down. Bodyweight only is fine to start.' },
   { id: 'leg-ext', name: 'Leg extension', m: 'quads', k: 'i', eq: ['gym'], load: 'kg', rr: [10, 15], step: 2.5, cue: 'Pause for a second at the top and lower slowly.' },
+  { id: 'sl-leg-ext', name: 'Single-leg extension', m: 'quads', k: 'i', eq: ['gym'], load: 'kg', rr: [10, 15], step: 2.5, auto: false, cue: 'One leg at a time. Pause at the top and lower slowly.' },
   { id: 'step-up', name: 'Dumbbell step-up', m: 'quads', k: 'c', eq: ['home'], load: 'kg', rr: [8, 12], step: 2, cue: 'Whole foot on a sturdy step, drive up through that leg without pushing off the back foot.' },
   { id: 'reverse-lunge', name: 'Reverse lunge', m: 'quads', k: 'c', eq: ['home', 'bw'], load: 'kg', rr: [8, 15], step: 2, cue: 'Step back, lower the back knee toward the floor, push through the front heel.' },
-  { id: 'box-pistol', name: 'Box pistol squat', m: 'quads', k: 'c', eq: ['bw'], load: 'bw', rr: [5, 12], cue: 'On one leg, sit back to a chair and stand up without using the other foot.' },
+  { id: 'side-lunge', name: 'Side lunge', m: 'quads', k: 'c', eq: ['gym', 'home', 'bw'], load: 'kg', rr: [8, 12], step: 2, auto: false, cue: 'Step wide to the side and sit back into that hip, other leg straight. Push back to the middle.' },
+  { id: 'walking-lunge', name: 'Walking lunge', m: 'quads', k: 'c', eq: ['gym', 'home', 'bw'], load: 'kg', rr: [8, 12], step: 2, auto: false, cue: 'Long steps, back knee toward the floor, push through the front heel and step through.' },
+  { id: 'box-pistol', name: 'Box pistol squat', m: 'quads', k: 'c', eq: ['bw'], load: 'bw', rr: [5, 12], next: 'pistol-squat', cue: 'On one leg, sit back to a chair and stand up without using the other foot.' },
+  { id: 'single-leg-squat', name: 'Single-leg squat', m: 'quads', k: 'c', eq: ['home', 'bw'], load: 'bw', rr: [6, 12], next: 'pistol-squat', auto: false, cue: 'Stand on one leg and sit back and down as far as you can control. Hold a wall or chair for balance.' },
+  { id: 'pistol-squat', name: 'Pistol squat', m: 'quads', k: 'c', eq: ['home', 'bw'], load: 'bw', rr: [3, 8], auto: false, cue: 'On one leg with the other held out in front, sit all the way down and stand up.' },
+  { id: 'sissy-squat', name: 'Sissy squat', m: 'quads', k: 'i', eq: ['home', 'bw'], load: 'bw', rr: [6, 15], auto: false, cue: 'Hold something for balance, rise onto your toes and lean back as your knees travel forward.' },
+  { id: 'jump-squat', name: 'Jumping squat', m: 'quads', k: 'c', eq: ['home', 'bw'], load: 'bw', rr: [8, 15], auto: false, cue: 'Squat down, jump up and land softly, then go straight into the next rep.' },
 
   // Hamstrings
   { id: 'rdl', name: 'Romanian deadlift', m: 'hamstrings', k: 'c', eq: ['gym'], load: 'kg', rr: [6, 10], step: 2.5, heavy: true, cue: 'Soft knees, push your hips back until you feel your hamstrings, keep your back flat.' },
+  { id: 'stiff-leg-dl', name: 'Stiff-leg deadlift', m: 'hamstrings', k: 'c', eq: ['gym'], load: 'kg', rr: [6, 10], step: 2.5, heavy: true, auto: false, cue: 'Legs almost straight. Hinge at the hips with a flat back until you feel your hamstrings.' },
   { id: 'db-rdl', name: 'Dumbbell Romanian deadlift', m: 'hamstrings', k: 'c', eq: ['gym', 'home'], load: 'kg', rr: [8, 12], step: 2, cue: 'Slide the dumbbells down your thighs by pushing your hips back.' },
   { id: 'leg-curl', name: 'Leg curl', m: 'hamstrings', k: 'i', eq: ['gym'], load: 'kg', rr: [10, 15], step: 2.5, cue: 'Seated or lying. Curl all the way, lower slowly, keep your hips down.' },
   { id: 'sl-rdl', name: 'Single-leg Romanian deadlift', m: 'hamstrings', k: 'c', eq: ['home', 'bw'], load: 'kg', rr: [8, 12], step: 2, cue: 'Hinge on one leg holding a dumbbell or backpack, hips level.' },
@@ -106,6 +135,8 @@ export const EXERCISES = [
   // Glutes
   { id: 'hip-thrust', name: 'Barbell hip thrust', m: 'glutes', k: 'c', eq: ['gym'], load: 'kg', rr: [8, 12], step: 5, cue: 'Upper back on a bench, drive your hips up and pause with a squeeze.' },
   { id: 'db-hip-thrust', name: 'Dumbbell hip thrust', m: 'glutes', k: 'c', eq: ['home'], load: 'kg', rr: [10, 15], step: 2, cue: 'Dumbbell on your hips, back on a sofa or bench, drive up and pause.' },
+  { id: 'sumo-dl', name: 'Sumo deadlift', m: 'glutes', k: 'c', eq: ['gym'], load: 'kg', rr: [5, 8], step: 5, heavy: true, auto: false, cue: 'Wide stance, toes out, hands inside your knees. Push the floor apart as you stand.' },
+  { id: 'forward-lean-lunge', name: 'Forward lean lunge', m: 'glutes', k: 'c', eq: ['gym', 'home', 'bw'], load: 'kg', rr: [8, 12], step: 2, auto: false, cue: 'Lean your chest forward over the front leg and drive through the front heel to load your glutes.' },
   { id: 'glute-bridge', name: 'Single-leg glute bridge', m: 'glutes', k: 'c', eq: ['home', 'bw'], load: 'bw', rr: [10, 15], cue: 'One foot planted, drive your hips up and hold for a second.' },
   { id: 'cable-kickback', name: 'Cable kickback', m: 'glutes', k: 'i', eq: ['gym'], load: 'kg', rr: [12, 15], step: 2.5, cue: 'Kick back and slightly out, squeeze at the top without arching your back.' },
 

@@ -64,6 +64,8 @@ export const PICTURES = {
   'leg-ext': { f: 'leg-extension' },
   'step-up': { f: 'step-ups' },
   'reverse-lunge': { f: 'reverse-lunge' },
+  'pistol-squat': { f: 'pistol-squat' },
+  'bb-curl': { f: 'barbell-curl' },
   'box-pistol': { f: 'pistol-squat', note: 'Shown without the chair. Sit back to a chair or box at the bottom until you can do it without one.' },
   rdl: { f: 'romanian-deadlift', flip: 2 },
   'db-rdl': { f: 'dumbbell-romanian-deadlift', flip: 2 },

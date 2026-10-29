@@ -23,19 +23,19 @@ export const weightForReps = (oneRM, reps) => oneRM * (1.0278 - 0.0278 * reps);
 const MODEL = {
   // chest and triceps follow the bench press
   bench: ['bench', 1], 'db-bench': ['bench', 0.37], 'incline-db': ['bench', 0.33], 'machine-press': ['bench', 0.85], 'cable-fly': ['bench', 0.2], 'db-fly': ['bench', 0.16],
-  'incline-bench': ['bench', 0.85], 'pec-deck': ['bench', 0.5], 'cg-bench': ['bench', 0.85],
-  pushdown: ['bench', 0.4], 'oh-cable-ext': ['bench', 0.3], 'skull-crusher': ['bench', 0.35], 'db-oh-ext': ['bench', 0.22], 'db-kickback': ['bench', 0.08],
+  'incline-bench': ['bench', 0.85], 'decline-bench': ['bench', 1.0], 'cable-press-low': ['bench', 0.3], 'cable-press-high': ['bench', 0.3], 'cable-fly-low': ['bench', 0.2], 'pec-deck': ['bench', 0.5], 'cg-bench': ['bench', 0.85],
+  pushdown: ['bench', 0.4], 'rope-ext': ['bench', 0.35], 'oh-cable-ext': ['bench', 0.3], 'skull-crusher': ['bench', 0.35], 'db-oh-ext': ['bench', 0.22], 'db-kickback': ['bench', 0.08],
   // shoulders follow the overhead press
-  ohp: ['press', 1], 'db-press': ['press', 0.38], 'lateral-raise': ['press', 0.16], 'cable-lateral': ['press', 0.14], 'rear-delt-fly': ['press', 0.14], 'face-pull': ['press', 0.45], 'bottle-lateral': ['press', 0.08],
+  ohp: ['press', 1], 'db-press': ['press', 0.38], 'lateral-raise': ['press', 0.16], 'cable-lateral': ['press', 0.14], 'rear-delt-fly': ['press', 0.14], 'face-pull': ['press', 0.45], 'front-raise': ['press', 0.16], 'external-rotation': ['press', 0.05], 'internal-rotation': ['press', 0.05], 'bottle-lateral': ['press', 0.08],
   // back: pull-downs follow the lat pulldown, rows the seated row; biceps follow the row
   'lat-pulldown': ['pulldown', 1], 'straight-arm': ['pulldown', 0.55], 'db-pullover': ['pulldown', 0.35], 'one-arm-row': ['pulldown', 0.55],
-  'cable-row': ['row', 1], 'cs-row': ['row', 0.42], 'bb-row': ['row', 1.1], 'backpack-row': ['row', 0.3], shrug: ['row', 0.5],
+  'cable-row': ['row', 1], 'vbar-row': ['row', 1], 'tbar-row': ['row', 1.0], 'cg-pulldown': ['pulldown', 1], 'bb-shrug': ['row', 0.9], 'bb-curl': ['row', 0.55], 'cs-row': ['row', 0.42], 'bb-row': ['row', 1.1], 'backpack-row': ['row', 0.3], shrug: ['row', 0.5],
   'ez-curl': ['row', 0.55], 'db-curl': ['row', 0.22], 'incline-curl': ['row', 0.18], 'cable-curl': ['row', 0.4], 'hammer-curl': ['row', 0.25], 'preacher-curl': ['row', 0.5], 'backpack-curl': ['row', 0.1],
   'wrist-curl': ['row', 0.25], 'reverse-curl': ['row', 0.3],
   // legs follow the squat; hamstrings the deadlift; calves the calf raise
-  squat: ['squat', 1], 'leg-press': ['squat', 2.2], 'hack-squat': ['squat', 1.2], 'goblet-squat': ['squat', 0.3], 'split-squat': ['squat', 0.28], 'leg-ext': ['squat', 0.45], 'step-up': ['squat', 0.22], 'reverse-lunge': ['squat', 0.22],
+  squat: ['squat', 1], 'low-bar-squat': ['squat', 1.05], 'front-squat': ['squat', 0.8], 'trap-bar-dl': ['squat', 1.3], 'db-squat': ['squat', 0.25], 'sumo-squat': ['squat', 0.3], 'sl-leg-ext': ['squat', 0.25], 'side-lunge': ['squat', 0.2], 'walking-lunge': ['squat', 0.22], 'forward-lean-lunge': ['squat', 0.22], 'leg-press': ['squat', 2.2], 'hack-squat': ['squat', 1.2], 'goblet-squat': ['squat', 0.3], 'split-squat': ['squat', 0.28], 'leg-ext': ['squat', 0.45], 'step-up': ['squat', 0.22], 'reverse-lunge': ['squat', 0.22],
   'hip-thrust': ['squat', 1.1], 'db-hip-thrust': ['squat', 0.45], 'cable-kickback': ['squat', 0.15], 'hip-abduction': ['squat', 0.45], 'kb-swing': ['squat', 0.25], 'cable-crunch': ['squat', 0.45],
-  deadlift: ['deadlift', 1], rdl: ['deadlift', 0.75], 'db-rdl': ['deadlift', 0.33], 'leg-curl': ['deadlift', 0.35], 'sl-rdl': ['deadlift', 0.15],
+  deadlift: ['deadlift', 1], 'stiff-leg-dl': ['deadlift', 0.65], 'sumo-dl': ['deadlift', 1], rdl: ['deadlift', 0.75], 'db-rdl': ['deadlift', 0.33], 'leg-curl': ['deadlift', 0.35], 'sl-rdl': ['deadlift', 0.15],
   'standing-calf': ['calf', 1], 'seated-calf': ['calf', 0.45], 'step-calf': ['calf', 0.3],
 };
 

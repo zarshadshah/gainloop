@@ -3,7 +3,7 @@ import { MUSCLES, allExercises } from './data/exercises.js';
 import { GUIDES } from './data/guides.js';
 
 const SYN = {
-  db: 'dumbbell', dbs: 'dumbbell', bb: 'barbell', kb: 'kettlebell', triceps: 'tricep', biceps: 'bicep', delts: 'delt',
+  db: 'dumbbell', dbs: 'dumbbell', dumbell: 'dumbbell', dumbells: 'dumbbell', dumbel: 'dumbbell', bb: 'barbell', kb: 'kettlebell', triceps: 'tricep', biceps: 'bicep', delts: 'delt',
   pushup: 'push up', pushups: 'push up', pullup: 'pull up', pullups: 'pull up', chinup: 'chin up', chinups: 'chin up',
   situp: 'sit up', situps: 'sit up', pressup: 'push up', pressups: 'push up', abs: 'ab', quad: 'quads', ham: 'hamstring', hams: 'hamstring', glute: 'glutes',
   pecs: 'pec', calves: 'calf',

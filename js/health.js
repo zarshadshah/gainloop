@@ -27,9 +27,9 @@ export const PAIN = [
 
 // Exercises that tend to load a sore area. They're left out when there is another option for that muscle.
 export const STRESS = {
-  knee: ['squat', 'hack-squat', 'split-squat', 'reverse-lunge', 'box-pistol', 'leg-ext', 'nordic', 'run', 'treadmill-run', 'skipping', 'jumping-jacks', 'burpees', 'stair-climber'],
-  back: ['deadlift', 'rdl', 'db-rdl', 'bb-row', 'backpack-row', 'squat', 'kb-swing', 'ohp', 'standing-calf', 'superman', 'rower', 'burpees'],
-  shoulder: ['dips', 'bench', 'incline-bench', 'cg-bench', 'ohp', 'db-press', 'pike-push-up', 'feet-up-pike', 'bench-dip', 'db-pullover', 'deficit-push-up', 'burpees', 'mountain-climbers'],
+  knee: ['squat', 'low-bar-squat', 'front-squat', 'db-squat', 'sumo-squat', 'trap-bar-dl', 'side-lunge', 'walking-lunge', 'forward-lean-lunge', 'single-leg-squat', 'pistol-squat', 'sissy-squat', 'sl-leg-ext', 'jump-squat', 'hack-squat', 'split-squat', 'reverse-lunge', 'box-pistol', 'leg-ext', 'nordic', 'run', 'treadmill-run', 'skipping', 'jumping-jacks', 'burpees', 'stair-climber'],
+  back: ['deadlift', 'sumo-dl', 'stiff-leg-dl', 'trap-bar-dl', 'tbar-row', 'low-bar-squat', 'front-squat', 'rdl', 'db-rdl', 'bb-row', 'backpack-row', 'squat', 'kb-swing', 'ohp', 'standing-calf', 'superman', 'rower', 'burpees'],
+  shoulder: ['dips', 'decline-bench', 'cable-press-high', 'cable-press-low', 'kneeling-push-up', 'incline-push-up', 'front-raise', 'bench', 'incline-bench', 'cg-bench', 'ohp', 'db-press', 'pike-push-up', 'feet-up-pike', 'bench-dip', 'db-pullover', 'deficit-push-up', 'burpees', 'mountain-climbers'],
 };
 
 export const blankHealth = () => ({ diabetes: 'none', conditions: [], pain: [], other: '' });
@@ -96,18 +96,18 @@ export function healthRules(raw) {
     r.repFloor = Math.max(r.repFloor, 8);
     r.stopShort = '2 to 3';
     r.lowSalt = true;
-    r.train.push('Breathe out as you push or pull and never hold your breath. Stop each set 2 to 3 reps before you would fail.');
+    r.train.push('Breathe out as you push or pull and never hold your breath. Finish each set with 2 to 3 good reps still in the tank.');
     r.food.push('Meals with very salty cheese are swapped out where there are other options. Go easy on added salt and stock cubes.');
     r.checkFirst.push('If your blood pressure isn’t under control, get the all-clear from your GP before lifting.');
-    r.items.push({ id: 'bp', name: 'High blood pressure', areas: ['train', 'food'], changes: ['At least 8 reps a set', 'Stop 2 to 3 reps before failure', 'Breathing reminders', 'Saltier meals swapped out'] });
+    r.items.push({ id: 'bp', name: 'High blood pressure', areas: ['train', 'food'], changes: ['At least 8 reps a set', 'Finish each set with 2 to 3 reps still in the tank', 'Breathing reminders', 'Saltier meals swapped out'] });
   }
   if (has('heart')) {
     r.repFloor = Math.max(r.repFloor, 10);
     r.stopShort = '3';
     r.cardioMax = 'moderate';
-    r.train.push('Keep every set comfortable: at least 10 reps, stopping about 3 reps before failure. Keep cardio at an easy to moderate pace, where you can still talk. Stop and get help if you have chest pain, unusual breathlessness, dizziness or a racing heartbeat.');
+    r.train.push('Keep every set comfortable: at least 10 reps, finishing each set with about 3 good reps still in the tank. Keep cardio at an easy to moderate pace, where you can still talk. Stop and get help if you have chest pain, unusual breathlessness, dizziness or a racing heartbeat.');
     r.checkFirst.push('Check with your GP or heart team before you start, and show them what this plan includes.');
-    r.items.push({ id: 'heart', name: 'Heart condition', areas: ['train'], changes: ['At least 10 reps a set', 'Stop about 3 reps before failure', 'Warning signs to stop'] });
+    r.items.push({ id: 'heart', name: 'Heart condition', areas: ['train'], changes: ['At least 10 reps a set', 'Finish each set with about 3 reps still in the tank', 'Warning signs to stop'] });
   }
   if (has('kidney')) {
     r.standardProtein = true;

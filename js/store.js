@@ -2,7 +2,7 @@
 import { addDays, isoDate, uid } from './util.js';
 import { blankHealth, normHealth } from './health.js';
 
-export const APP_VERSION = '1.5.0';
+export const APP_VERSION = '1.6.0';
 const KEY = 'gainloop.v1';
 
 export const blankState = () => ({
@@ -34,7 +34,6 @@ export const blankState = () => ({
   pantry: { have: [], text: '', ai: null },
   foodLog: {},
   adjust: [],
-  wellness: [],
   healthAck: '',
   changes: [],
   checkins: [],
@@ -75,8 +74,10 @@ export function migrate(s) {
   const base = blankState();
   const out = { ...base, ...s };
   out.units = { ...base.units, ...(s.units || {}) };
-  for (const k of ['weights', 'measures', 'pins', 'sessionsDone', 'customMeals', 'changes', 'checkins', 'myExercises', 'customExercises', 'adjust', 'wellness', 'loads']) if (!Array.isArray(out[k])) out[k] = [];
-  out.wellness = out.wellness.filter((e) => e && typeof e.d === 'string' && e.a && typeof e.a === 'object');
+  for (const k of ['weights', 'measures', 'pins', 'sessionsDone', 'customMeals', 'changes', 'checkins', 'myExercises', 'customExercises', 'adjust', 'loads']) if (!Array.isArray(out[k])) out[k] = [];
+  // the weekly wellness check was removed: its answers and notes are dropped
+  delete out.wellness;
+  out.changes = out.changes.filter((c) => c && c.kind !== 'wellness');
   for (const k of ['swaps', 'exLog', 'drafts', 'shopTicks', 'foodLog']) if (!out[k] || typeof out[k] !== 'object' || Array.isArray(out[k])) out[k] = {};
   if (!out.pantry || !Array.isArray(out.pantry.have)) out.pantry = { have: [] };
   out.pantry = { have: out.pantry.have, text: typeof out.pantry.text === 'string' ? out.pantry.text.slice(0, 600) : '', ai: out.pantry.ai && typeof out.pantry.ai === 'object' ? out.pantry.ai : null };

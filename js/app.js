@@ -12,10 +12,10 @@ import { namesMatch, searchExercises } from './search.js';
 import { matchRecipes, mealIdeas, pickableIngredients } from './pantry.js';
 import { CARDIO_FINISH, CARDIO_MIN as CARDIO_FINISH_MIN, MAX_EXERCISES, MAX_SETS, PROGRAM_VERSION, advice, cardioAdvice, nextSessionId, repText, restText, swapChoices, whySets } from './plan.js';
 import { applySwap, dayTotals, mealLines, mealMacros, needsHalalNote, pantryLine, rescaleDay, shoppingList, swapOptions } from './meals.js';
-import { afterBodyChange, afterProfileChange, allowedMeals, analyseCheckin, applyCheckin, dietOf, ensureCurrentWeek, mealsById, refreshMeals, refreshProgram, rescaleMeals, rulesOf, seedDemo, startState, targetsFor, weekDate, wellnessChangeItems } from './engine.js';
+import { afterBodyChange, afterProfileChange, allowedMeals, analyseCheckin, applyCheckin, dietOf, ensureCurrentWeek, mealsById, refreshMeals, refreshProgram, rescaleMeals, rulesOf, seedDemo, startState, targetsFor, weekDate } from './engine.js';
 import { LOOKBACK, SLOT_SHARE, addLogItem, adjustmentProgress, applyCatchUp, cardioOffer, cardioToDo, catchUpOptions, dayTargets, diffOf, leaveGap, logFor, loggedMeal, markCardio, pendingGap, pruneLog, removeLogItem, stopAdjustment } from './track.js';
 import { AIError, aiMeal, aiRules, callAI, estimateTotal, slotTargets } from './ai.js';
-import { BANDS, MAX_SCORE, QUESTIONS, activeEntry, addWellness, adjustWeek, assess, familiarSet, history as wellnessHistory, isComplete, totalOf, weekSettings, weekSummary, wellbeingNote, wellnessDue } from './wellness.js';
+import { CYCLE_WEEKS, adjustWeek, weekSettings, weekSummary } from './week.js';
 import * as PQ from './parq.js';
 import * as ST from './strength.js';
 import { LOAD_GROUPS, MAX_CHANGE, closeWeeks, groupOf, planWeek, rxText, weekSoFar } from './load.js';
@@ -526,6 +526,10 @@ function parqView(st) {
       ${field('pq-name', 'Your full name', `<input id="pq-name" name="pq-name" maxlength="60" autocomplete="name" value="${esc(p.name || '')}">`, 'Typing your name is your signature. It is kept on this device only.')}
       <div class="field check"><input type="checkbox" id="pq-agree" name="pq-agree"${p.agree ? ' checked' : ''}><label for="pq-agree">I have read, understood and completed this questionnaire</label></div>
       ${level === 'seek' ? `<div class="field check"><input type="checkbox" id="pq-ack" name="pq-ack"${p.ack ? ' checked' : ''}><label for="pq-ack">I understand that I should get further advice before becoming more active</label></div>` : ''}
+      <section class="note parq-use" aria-labelledby="parq-use-h">
+        <h2 class="h3" id="parq-use-h">How your information is used</h2>
+        <p>Your answers and details are used to personalise your plan, to help improve the algorithm that builds it, and to support you in achieving your goals.</p>
+      </section>
       ${st.error ? `<p class="error" role="alert">${esc(st.error)}</p>` : ''}
       <div class="form-actions"><button class="btn btn-primary" type="submit">${st.mode === 'parq' ? 'Save' : 'Continue'}</button></div>
       ${credit}
@@ -671,7 +675,7 @@ function todayView() {
         ${doneToday.length ? `<p class="done-line">${I.check} Done today: ${esc(doneToday.join(', '))}</p>` : ''}
         <p class="big-name">${esc(next.name)}</p>
         <p class="muted">${nextWeek.slots.slice(0, 4).map((sl) => esc(exerciseById(sl.ex)?.name || '')).join(', ')}${nextWeek.slots.length > 4 ? ` and ${nextWeek.slots.length - 4} more` : ''}</p>
-        ${wk.entry ? `<p class="week-line"><a class="link" href="#wellness">${esc(BANDS[wk.w.band].name)}</a>: ${esc(weekShort(wk.w))}.</p>` : ''}
+        <p class="week-line">${esc(weekShort(wk.w))}.</p>
         ${r.train.length ? `<p class="card-note">${esc(r.train[0])}</p>` : ''}
         <a class="btn ${doneToday.length || status.due ? '' : 'btn-primary'}" href="#session-${next.id}">Start ${esc(next.name)}</a>
       </section>`
@@ -713,7 +717,6 @@ function todayView() {
     ${healthCard}
     ${parqCard}
     ${checkinCard}
-    ${wellnessDueCard(t)}
     ${trackCardHTML(t)}
     ${workout}
     ${weigh}
@@ -903,13 +906,10 @@ function trainView() {
       : `Last week ${fLoad(info.base)}. This week ${fLoad(info.planned)} (${pctSigned(info.pct)}).`;
     return `<li class="row load-row"><span class="row-main"><span class="row-title">${g.name}</span><span class="fine">${esc(detail)}</span></span><span class="load-so-far"><strong>${fLoad(sofar[g.id])}</strong><span class="fine">so far</span></span></li>`;
   }).join('');
-  const weekBox = `<section class="section week-box${wk.entry ? ` week-${wk.w.band}` : ''}">
-        <div class="section-head"><h2 class="h2">This week</h2>${wk.entry ? '<a class="link" href="#wellness">Your answers</a>' : ''}</div>
-        ${wk.entry
-    ? `<p><strong>${esc(BANDS[wk.w.band].name)}</strong>, ${wk.entry.total} of ${MAX_SCORE} in your wellness check on ${fmtDate(wk.entry.d, 'day')}.</p>
-           <ul class="notes">${weekSummary(wk.w, p).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`
-    : `<p>Answer the weekly wellness check and your load goes up or down to match how you feel.</p>
-           <a class="btn" href="#wellness-answer">Answer 5 questions</a>`}
+  const weekBox = `<section class="section week-box${wk.w.deload ? ' week-lighter' : ''}">
+        <div class="section-head"><h2 class="h2">This week</h2></div>
+        <p><strong>${esc(weekShort(wk.w))}</strong></p>
+        <ul class="notes">${weekSummary(wk.w, p).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
         <h3 class="h3">Weekly load</h3>
         <p class="fine">Weight × reps × sets, added up for legs (with abs), push and pull. Worked out at the end of each week, and each week stays within ${round(MAX_CHANGE * 100)}% of the one before.</p>
         <ul class="list">${loadRows}</ul>
@@ -972,8 +972,8 @@ function trainView() {
     </section>
     <section class="section">
       <h2 class="h2">How progress works</h2>
-      <p>Each exercise has a rep range. Your load for the week is last week’s, up a little when you’re progressing and down a little when you’re deloading, never by more than ${round(MAX_CHANGE * 100)}%. It comes first from one or two more reps on your exercises, and once you reach the top of the range, from a heavier weight and fewer reps. Stop each set ${wk.w.stop} reps before you'd fail${wk.entry ? ' this week' : ''}.</p>
-      <p class="muted">Your weekly wellness check decides which way it goes: a fresh week adds up to ${round(MAX_CHANGE * 100)}%, a normal week adds half that, a tired week takes off half that, and a lighter week takes off ${round(MAX_CHANGE * 100)}%. Poor sleep or stress holds it where it is.</p>
+      <p>Each exercise has a rep range. Your load for the week is last week’s, up a little most weeks and down a little every ${CYCLE_WEEKS}th week, never by more than ${round(MAX_CHANGE * 100)}%. It comes first from one or two more reps on your exercises, and once you reach the top of the range, from a heavier weight and fewer reps. Finish each set with ${wk.w.stop} good reps still in the tank.</p>
+      <p class="muted">Every ${CYCLE_WEEKS}th week is a lighter one: the load comes down so your body can catch up, and the weeks after feel stronger.</p>
     </section>`;
 }
 
@@ -989,7 +989,7 @@ function sessionView(sid) {
   const ws = weekSession(s, wk);
   return `${backLink('#train', 'Train')}
     <header class="screen-head"><div><h1 class="title">${esc(s.name)}</h1><p class="muted">${plural(ws.slots.filter((x) => !x.cardio).length, 'exercise')} and ${CARDIO_FINISH_MIN} min cardio, about ${ws.minutes} min</p></div></header>
-    ${wk.entry ? `<p class="note week-note-top"><a class="link" href="#wellness">${esc(BANDS[w.band].name)}</a>: ${esc(weekShort(w))}. Stop each set ${esc(w.stop)} reps before you’d fail.</p>` : ''}
+    <p class="note week-note-top">${esc(weekShort(w))}. Finish each set with ${esc(w.stop)} good reps still in the tank.</p>
     <ul class="notes week-loads">${[...new Set(ws.slots.map((sl) => groupOf(exerciseById(sl.ex))).filter(Boolean))].map((g) => `<li>${esc(loadLine(wk.plan.groups[g]))}</li>`).join('')}</ul>
     ${r.train.length ? `<details class="note session-notes"${S.sessionsDone.length ? '' : ' open'}><summary>Safety notes for your health</summary><ul class="notes">${r.train.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
     ${ws.slots.map((sl, i) => {
@@ -1007,16 +1007,14 @@ function sessionView(sid) {
       const weight = dr.kg ?? (adv.kg !== null && adv.kg !== undefined ? liftInputValue(adv.kg, U().lift) : last && ex.load === 'kg' ? liftInputValue(last.kg, U().lift) : '');
       const repsLabel = ex.load === 's' ? 'Seconds' : 'Reps';
       const sore = soreFor(ex.id);
-      const base = sl.base ? exerciseById(sl.base) : null;
       return `<article class="exercise${sl.priority ? ' is-priority' : ''}" data-ex="${ex.id}">
         <header class="ex-head">
           <div class="ex-title">
-            <h2 class="h3">${esc(ex.name)}${sl.mine && !base ? ' <span class="badge badge-line">You do this</span>' : ''}</h2>
+            <h2 class="h3">${esc(ex.name)}${sl.mine ? ' <span class="badge badge-line">You do this</span>' : ''}</h2>
             <p class="fine">${muscleName(sl.m)}${sl.priority ? ' (priority)' : ''}, ${sl.sets} sets of ${repText(ex, rr)}, ${restText(ex)}</p>
           </div>
-          <button class="icon-btn" data-act="swap" data-sid="${sid}" data-ex="${base ? base.id : ex.id}" aria-label="Swap ${esc(base ? base.name : ex.name)}">${I.swap}</button>
+          <button class="icon-btn" data-act="swap" data-sid="${sid}" data-ex="${ex.id}" aria-label="Swap ${esc(ex.name)}">${I.swap}</button>
         </header>
-        ${base ? `<p class="week-note">This week instead of ${esc(lcFirst(base.name))}. Your muscles are sore, and that one works them at full stretch, which is hardest on sore muscles. You already know this one, so it won’t add soreness of its own. <button class="btn-link" data-act="wellness-keep" data-ex="${base.id}">Do ${esc(lcFirst(base.name))} anyway</button></p>` : ''}
         <button class="ex-guide" data-act="guide" data-ex="${ex.id}">${thumb(ex.id)}<span class="ex-guide-text"><span>How to do it</span><span class="fine">${GUIDES[ex.id] ? esc(kitText(ex.id)) : 'Steps and a video link'}</span></span></button>
         ${sore.length ? `<p class="warn">${I.alert} ${sl.mine ? 'This one stays because you already do it.' : Object.values(S.swaps).includes(ex.id) ? 'You swapped this one in.' : 'Nothing else fits your equipment here.'} Go lighter if your ${esc(andList(sore))} ${hurtVerb(sore)}, or swap it.</p>` : ''}
         ${adv.text ? `<p class="advice">${esc(adv.text)}</p>` : ''}
@@ -1554,7 +1552,7 @@ function restoreView() {
 
 function changesView() {
   const list = [...S.changes].reverse();
-  const kind = { setup: 'Set up', checkin: 'Check-in', measure: 'New measurements', edit: 'Details changed', track: 'Back on track', 'track-stop': 'Back on track stopped', wellness: 'Wellness check' };
+  const kind = { setup: 'Set up', checkin: 'Check-in', measure: 'New measurements', edit: 'Details changed', track: 'Back on track', 'track-stop': 'Back on track stopped' };
   return `${backLink('#you', 'You')}
     <header class="screen-head"><h1 class="title">Plan changes</h1></header>
     <p class="muted">Every change to your calories and training, with the reason.</p>
@@ -1610,19 +1608,18 @@ function checkinView() {
     </div>`;
 }
 
-// ----- Weekly wellness check -----
+// ----- The week's load -----
 
-// This week's settings from the check-in in force today (a normal week if there isn't one), the sessions
-// as they run this week, and the load plan for legs, push and pull. Worked out once per screen.
+// This week's settings (every fourth week is a lighter one), the sessions as they run this week, and the
+// load plan for legs, push and pull. Worked out once per screen.
 let weekCache = null;
 function weekNow(d = today()) {
   if (weekCache && weekCache.d === d) return weekCache;
-  const entry = activeEntry(S, d);
-  const w = weekSettings(entry, S.profile, rules());
-  const adj = adjustWeek(S.program, w, { profile: S.profile, rules: rules(), familiar: familiarSet(S, d), keep: entry?.keep || [] });
+  const w = weekSettings(S, d, S.profile, rules());
+  const adj = adjustWeek(S.program, w);
   const sessions = S.program.sessions.map((x) => adj.get(x.id));
   const plan = planWeek(S, sessions, { settings: w, rangeOf: (ex) => repRange(ex, rules()), t: d });
-  weekCache = { d, entry, w, adj, plan };
+  weekCache = { d, w, adj, plan };
   return weekCache;
 }
 
@@ -1631,10 +1628,10 @@ function weekSession(s, wk = weekNow()) {
   return wk.adj.get(s.id) || { ...s, slots: s.slots.map((sl, i) => ({ ...sl, i, planned: sl })) };
 }
 
-// 'Tired week: load down about 2.5%'
+// 'Lighter week: load down about 5%'
 function weekShort(w) {
   const pct = `${round(Math.abs(w.delta) * 100, 1)}%`;
-  return w.mode === 'progress' ? `load up about ${pct}` : w.mode === 'deload' ? `load down about ${pct}` : 'load held where it is';
+  return w.mode === 'deload' ? `Lighter week: load down about ${pct}` : `Load up about ${pct} this week`;
 }
 
 // kg × reps × sets in your unit, to the nearest 10 so it reads easily
@@ -1644,90 +1641,6 @@ function loadLine(info) {
   return `${info.name} load: ${fLoad(info.planned)} this week, ${pctSigned(info.pct)} on ${info.rebased ? 'your last session of each exercise' : 'last week'} (${fLoad(info.base)}).`;
 }
 const pctSigned = (p) => `${p > 0 ? '+' : p < 0 ? '−' : ''}${Math.abs(p)}%`;
-
-function wellnessDueCard(t) {
-  const due = wellnessDue(S, t);
-  if (!due.due) return '';
-  const text = due.first
-    ? 'Five quick questions on your energy, sleep, soreness, stress and mood. Your sessions for the week adjust to your answers.'
-    : weekdayIndex(t) === 6
-      ? 'It’s Sunday: five quick questions, and the coming week’s sessions adjust to how you feel.'
-      : `Your last one was ${relDays(due.last.d, t)}. Five quick questions, and this week’s sessions adjust to how you feel.`;
-  return `<section class="card card-tape wellness-card">
-      <h2 class="h3">Weekly wellness check</h2>
-      <p>${esc(text)} About a minute.</p>
-      <a class="btn btn-primary" href="#wellness-answer">Answer now</a>
-    </section>`;
-}
-
-function wellnessForm() {
-  const t = today();
-  const mine = (S.wellness || []).find((e) => e.d === t);
-  const a = ui.wq || { ...(mine?.a || {}) };
-  ui.wq = a;
-  return `${backLink(activeEntry(S, t) ? '#wellness' : '#today', activeEntry(S, t) ? 'This week' : 'Today')}
-    <header class="screen-head"><h1 class="title">Weekly wellness check</h1></header>
-    <p class="muted">Answer for how you’ve felt over the last week. Best on Sunday morning, before the new week. Your sessions for the next 7 days adjust to your answers, and they stay on this phone.</p>
-    <form data-form="wellness" class="wq-form" novalidate>
-      ${QUESTIONS.map((q) => `<fieldset class="wq" id="wq-${q.id}">
-        <legend class="h3">${esc(q.name)}</legend>
-        <div class="choices wq-options">${[5, 4, 3, 2, 1].map((v) => `<input type="radio" id="wq-${q.id}-${v}" name="wq-${q.id}" value="${v}" data-change="wellness"${a[q.id] === v ? ' checked' : ''}><label for="wq-${q.id}-${v}"><span class="wq-num">${v}</span><span class="wq-text">${esc(q.options[v - 1])}</span></label>`).join('')}</div>
-      </fieldset>`).join('')}
-      <div class="finish-bar wq-bar">
-        <p class="wq-total" id="wq-total" aria-live="polite">${wqTotalText(a)}</p>
-        <button class="btn btn-primary btn-wide" type="submit">Save and set my week</button>
-      </div>
-    </form>`;
-}
-
-function wqTotalText(a) {
-  const n = QUESTIONS.filter((q) => a[q.id]).length;
-  if (!n) return 'Each answer scores from 5 (best) to 1.';
-  if (!isComplete(a)) return `<strong>${totalOf(a)}</strong> so far, ${n} of ${QUESTIONS.length} answered`;
-  const others = { ...S, wellness: (S.wellness || []).filter((e) => e.d !== today()) };
-  const res = assess(others, a, today());
-  return `<strong>${res.total}</strong> of ${MAX_SCORE}: a ${BANDS[res.band].name.toLowerCase()}`;
-}
-
-function wellnessView(param) {
-  const t = today();
-  const entry = activeEntry(S, t);
-  if (param === 'answer' || !entry) return wellnessForm();
-  ui.wq = null;
-  const w = weekSettings(entry, S.profile, rules());
-  const summary = weekSummary(w, S.profile);
-  const note = wellbeingNote(S, entry);
-  const past = wellnessHistory(S).reverse();
-  const isToday = entry.d === t;
-  return `${backLink('#today', 'Today')}
-    <header class="screen-head"><div><p class="date">Wellness check, ${fmtDate(entry.d, 'long')}</p><h1 class="title">${BANDS[entry.band].name}</h1></div></header>
-    <section class="gauge wq-gauge">
-      <div class="gauge-head"><span class="gauge-nums"><strong>${entry.total}</strong> of ${MAX_SCORE}</span><span class="gauge-nums">your normal ${fmtScore(entry.normal)}</span></div>
-      ${tapeHTML({ current: entry.total, target: entry.normal, unit: 'score', minorStep: 1, majorEvery: 5, padLo: Math.min(entry.total, entry.normal) - 5, padHi: MAX_SCORE - Math.max(entry.total, entry.normal), label: `Score ${entry.total} of ${MAX_SCORE}, your normal ${fmtScore(entry.normal)}` })}
-      <ul class="notes wq-why">${entry.why.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
-    </section>
-    ${note ? `<p class="note">${esc(note)}</p>` : ''}
-    <section class="section wq-week">
-      <h2 class="h2">This week’s training</h2>
-      <ul class="notes">${summary.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
-      <a class="btn btn-primary" href="#train">See this week’s sessions</a>
-    </section>
-    <section class="section">
-      <div class="section-head"><h2 class="h2">Your answers</h2><a class="link" href="#wellness-answer">${isToday ? 'Change' : 'Answer again'}</a></div>
-      <ul class="list">${QUESTIONS.map((q) => `<li class="row wq-row"><span class="wq-num${entry.a[q.id] <= 2 ? ' low' : ''}">${entry.a[q.id]}</span><span class="row-main"><span class="row-title">${esc(q.name)}</span><span class="fine">${esc(q.options[entry.a[q.id] - 1])}</span></span></li>`).join('')}</ul>
-    </section>
-    ${past.length > 1 ? `<section class="section">
-      <h2 class="h2">Past weeks</h2>
-      <div class="bars">${past.slice(0, 12).map((e) => `<div class="bar-row wq-bar-row">
-        <span class="bar-label">${fmtDate(e.d, 'day')} <span class="fine">${esc(BANDS[e.band]?.short || '')}</span></span>
-        <span class="bar-track"><span class="bar-fill${e.band === 'tired' || e.band === 'lighter' ? ' low' : ''}" style="width:${(e.total / MAX_SCORE) * 100}%"></span></span>
-        <span class="bar-value">${e.total}</span>
-      </div>`).join('')}</div>
-    </section>` : ''}
-    <p class="fine">The questions come from a wellness questionnaire used with athletes. Your score is compared with your own normal, the average of your recent weeks, because everyone answers a little differently.</p>`;
-}
-
-const fmtScore = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
 // ----- Exercise guides, your exercises and the library -----
 
@@ -2140,11 +2053,10 @@ const VIEWS = {
   health: healthView,
   ontrack: ontrackView,
   log: logView,
-  wellness: wellnessView,
 };
 
 const TAB_OF = {
-  today: 'today', checkin: 'today', ontrack: 'today', log: 'today', wellness: 'today', body: 'body', measure: 'body', frame: 'body', bodyfat: 'body',
+  today: 'today', checkin: 'today', ontrack: 'today', log: 'today', body: 'body', measure: 'body', frame: 'body', bodyfat: 'body',
   train: 'train', session: 'train', myex: 'train', library: 'train',
   eat: 'eat', shop: 'eat', mealnew: 'eat', rules: 'eat', pantry: 'eat',
   you: 'you', profile: 'you', parq: 'you', baseline: 'you', restore: 'you', changes: 'you', health: 'you',
@@ -2184,7 +2096,6 @@ function render() {
   weekCache = null;
   if (S.profile && closeWeeks(S, today())) save();
   if (r.name !== 'checkin') ui.checkin = null;
-  if (r.name !== 'wellness') ui.wq = null;
   if (!['setup', 'profile', 'parq', 'baseline'].includes(r.name)) ui.setup = null;
   view.innerHTML = VIEWS[r.name](r.param);
   renderTabs(r);
@@ -2461,13 +2372,6 @@ const ACTIONS = {
   },
   swap(el) {
     openSheet({ type: 'swap', title: 'Swap exercise', sid: el.dataset.sid, ex: el.dataset.ex });
-  },
-  // Keep your usual exercise this week instead of the gentler one the wellness check picked
-  'wellness-keep'(el) {
-    const entry = activeEntry(S, today());
-    if (!entry) return;
-    entry.keep = [...new Set([...(entry.keep || []), el.dataset.ex])];
-    commit(`Back to ${lcFirst(exerciseById(el.dataset.ex)?.name || 'your usual exercise')} this week`);
   },
   'swap-to'(el) {
     const from = el.dataset.from;
@@ -2865,11 +2769,6 @@ const CHANGES = {
     render();
   },
   'ai-slot'(el) { ui.aiSlot = el.value; },
-  wellness(el) {
-    ui.wq = { ...(ui.wq || {}), [el.name.replace(/^wq-/, '')]: Number(el.value) };
-    const box = document.getElementById('wq-total');
-    if (box) box.innerHTML = wqTotalText(ui.wq);
-  },
   'lib-filter'(el) {
     ui.libFilter = el.value;
     const list = document.getElementById('lib-list');
@@ -2912,28 +2811,6 @@ const LIVE = {
 };
 
 const FORMS = {
-  wellness(form) {
-    const a = {};
-    for (const q of QUESTIONS) {
-      const v = Number(fval(form, `wq-${q.id}`));
-      if (v) a[q.id] = v;
-    }
-    if (!isComplete(a)) {
-      const miss = QUESTIONS.find((q) => !a[q.id]);
-      toast(`Answer ${QUESTIONS.length - Object.keys(a).length === 1 ? 'the last question' : 'every question'} first`);
-      document.getElementById(`wq-${miss.id}`)?.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'center' });
-      return;
-    }
-    const t = today();
-    const entry = addWellness(S, t, a);
-    // answering again the same day replaces that day's note in your plan changes
-    S.changes = S.changes.filter((c) => !(c.kind === 'wellness' && c.d === t));
-    S.changes.push({ d: t, kind: 'wellness', items: wellnessChangeItems(S, entry) });
-    ui.wq = null;
-    save();
-    location.hash = '#wellness';
-    toast(`${BANDS[entry.band].name}: your sessions are set`);
-  },
   setup(form) {
     const st = ui.setup;
     if (!captureSetup(form, true)) { render(); return; }

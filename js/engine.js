@@ -9,7 +9,6 @@ import { addDays, clamp, fmtInt, mondayOf, rng, round } from './util.js';
 import { countsInLoad } from './load.js';
 import { demoState } from './store.js';
 import { dayTargets } from './track.js';
-import { BANDS, MAX_SCORE, addWellness, lastSunday, weekSettings, weekSummary } from './wellness.js';
 
 export const mealsById = (state) => new Map([...MEALS, ...(state.customMeals || [])].map((m) => [m.id, m]));
 
@@ -271,21 +270,8 @@ export function seedDemo(today, seed = DEMO.seed) {
   // exercises you know that are not in the plan stay available for swaps
   for (const [id, log] of Object.entries(known)) if (!s.exLog[id]) s.exLog[id] = log;
 
-  // Six Sunday wellness checks: steady weeks, then a tired and sore one, so this week's sessions are lighter
-  const answers = [[3, 4, 3, 3, 4], [4, 4, 3, 3, 4], [3, 3, 3, 3, 4], [4, 4, 3, 4, 4], [3, 4, 3, 3, 4], [2, 3, 2, 3, 4]];
-  answers.forEach(([fatigue, sleep, soreness, stress, mood], i) => {
-    const d = addDays(lastSunday(today), -7 * (answers.length - 1 - i));
-    const e = addWellness(s, d, { fatigue, sleep, soreness, stress, mood });
-    if (i === answers.length - 1) s.changes.push({ d, kind: 'wellness', items: wellnessChangeItems(s, e) });
-  });
   refreshMeals(s, today, true);
   return s;
-}
-
-// What a weekly wellness check changed, for the list of plan changes
-export function wellnessChangeItems(state, entry) {
-  const w = weekSettings(entry, state.profile, rulesOf(state));
-  return [{ area: 'training', text: `${BANDS[entry.band].name}: ${entry.total} of ${MAX_SCORE} in your wellness check`, why: `${entry.why.join(' ')} ${weekSummary(w, state.profile).join(' ')}` }];
 }
 
 export const DEMO = { seed: 5, startKg: 70, underestimate: 200, days: 56 };

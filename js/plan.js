@@ -32,7 +32,7 @@ const ORDER = ['quads', 'chest', 'back', 'hamstrings', 'shoulders', 'glutes', 't
 const PREFER_ISOLATION = new Set(['biceps', 'triceps', 'calves', 'abs', 'forearms']);
 const VERTICAL_PULLS = new Set(['lat-pulldown', 'pull-up']);
 // Harder bodyweight versions: reached through progression, not handed to beginners on day one
-const PROGRESSIONS = new Set(EXERCISES.filter((e) => e.next).map((e) => e.next));
+const PROGRESSIONS = new Set(EXERCISES.filter((e) => e.next && !e.easier).map((e) => e.next));
 
 // Every session has exactly 6 exercises, plus a separate 10 minute cardio finisher, and an exercise at most 5 sets
 export const MAX_EXERCISES = 6;
@@ -564,17 +564,17 @@ export function cardioAdvice(ex, history, plannedMin, effort = 'easy') {
 }
 
 // Double progression: stay at a weight until you hit the top of the range on every set, then go up.
-// week (from your weekly wellness check): load 'progress' as normal, 'hold' keeps last time's weight.
+// week: load 'progress' as normal, 'hold' (a lighter week) keeps last time's weight.
 // Once a full week of training has been recorded, the weekly load plan (load.js) sets the numbers instead.
-export function advice(ex, history, fmtW, rr = ex.rr, stop = '1 or 2', week = null) {
+export function advice(ex, history, fmtW, rr = ex.rr, stop = '2 or 3', week = null) {
   const last = history && history.length ? history[history.length - 1] : null;
   const [lo, hi] = rr;
   const mode = week?.load || 'progress';
   if (!last || !last.reps?.length) {
     if (ex.load === 'kg' && week?.start) return { kg: week.start, text: '' };
-    if (ex.load === 'kg') return { kg: null, text: `First time: pick a weight you could lift about ${hi + 2} times, and stop each set ${stop} reps before you'd fail.` };
+    if (ex.load === 'kg') return { kg: null, text: `First time: pick a weight you could lift about ${hi + 2} times, and finish each set with ${stop} good reps still in the tank.` };
     if (ex.load === 's') return { kg: null, text: `First time: hold for as long as you can with good form, up to ${hi} seconds.` };
-    return { kg: null, text: `First time: do as many good reps as you can, stopping ${stop} short of failure.` };
+    return { kg: null, text: `First time: do good reps and stop each set with ${stop} still in the tank.` };
   }
   const allTop = last.reps.every((r) => r >= hi);
   const anyLow = last.reps.some((r) => r < lo);
@@ -582,8 +582,8 @@ export function advice(ex, history, fmtW, rr = ex.rr, stop = '1 or 2', week = nu
   if (ex.load === 'kg') {
     const w = last.kg ?? 0;
     if (mode === 'hold') {
-      if (!w) return { kg: null, text: `Stay at bodyweight this week and stop each set ${stop} reps before you'd fail.` };
-      return { kg: w, text: allTop ? `You hit ${hi} on every set last time, but stay at ${fmtW(w)} this week while you recover, and go up next week.` : `Stay at ${fmtW(w)} this week and stop each set ${stop} reps before you'd fail. No need to beat last time.` };
+      if (!w) return { kg: null, text: `Stay at bodyweight this week and finish each set with ${stop} good reps still in the tank.` };
+      return { kg: w, text: allTop ? `You hit ${hi} on every set last time, but stay at ${fmtW(w)} this week, a lighter week, and go up next week.` : `Stay at ${fmtW(w)} this week and finish each set with ${stop} good reps still in the tank. No need to beat last time.` };
     }
     if (allTop) {
       if (!w) return { kg: null, text: `You hit ${hi} on every set with bodyweight. Add some load: dumbbells or a loaded backpack.` };
@@ -597,7 +597,7 @@ export function advice(ex, history, fmtW, rr = ex.rr, stop = '1 or 2', week = nu
     if (allTop) return { kg: null, text: `You held ${hi} s on every set. Add 10 seconds or hold something heavier.` };
     return { kg: null, text: 'Aim to hold a few seconds longer than last time.' };
   }
-  if (mode === 'hold') return { kg: null, text: `Aim for about what you did last time, stopping ${stop} reps short of failure. No need to beat it this week.` };
+  if (mode === 'hold') return { kg: null, text: `Aim for about what you did last time, finishing with ${stop} good reps still in the tank. No need to beat it this week.` };
   if (allTop) {
     const next = ex.next ? exerciseById(ex.next) : null;
     if (next) return { kg: null, text: `You hit ${hi} on every set. Try the harder version, ${lcFirst(next.name)}. Swap it in from the exercise menu.`, nextEx: next.id };
