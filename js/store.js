@@ -2,7 +2,7 @@
 import { addDays, isoDate, uid } from './util.js';
 import { blankHealth, normHealth } from './health.js';
 
-export const APP_VERSION = '1.6.0';
+export const APP_VERSION = '1.6.1';
 const KEY = 'gainloop.v1';
 
 export const blankState = () => ({

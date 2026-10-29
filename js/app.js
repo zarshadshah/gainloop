@@ -262,7 +262,12 @@ const stepsFor = (mode) => (mode === 'edit' ? EDIT_STEPS : NEW_STEPS);
 
 function newSetup(mode) {
   if (mode === 'parq') return { mode, phase: 'parq', step: 0, draft: newDraft('edit'), error: '', parq: newParq() };
-  if (mode === 'baseline') return { mode, phase: 'base', step: 0, draft: newDraft('edit'), error: '', base: newBase() };
+  if (mode === 'baseline') {
+    // the lifts you entered before are filled in, so you can change just one
+    const tested = {};
+    for (const [id, l] of Object.entries(S.baseline?.lifts || {})) if (l.tested && l.weight) tested[id] = { weight: l.weight, reps: l.reps };
+    return { mode, phase: 'base', step: 0, draft: newDraft('edit'), error: '', base: { i: -1, tested, draft: {}, single: false } };
+  }
   return { mode, phase: 'details', step: 0, draft: newDraft(mode), error: '' };
 }
 
@@ -566,28 +571,44 @@ function baseView(st) {
   const d = st.draft;
   const lifts = ST.testLifts(d.equipment);
   const n = lifts.length;
+  if (st.mode === 'baseline' && b.i < 0) return liftsView(st, lifts);
   b.i = Math.max(0, Math.min(b.i, n - 1));
   const l = lifts[b.i];
   const t = b.tested[l.id];
   const dr = b.draft[l.id] || (t ? { w: liftInputValue(t.weight, U().lift), r: String(t.reps) } : { w: '', r: '' });
   return `<section class="setup base">
     <div class="steps">
-      ${st.mode === 'baseline' && b.i === 0 ? backLink('#you', 'You') : `<button class="back" type="button" data-act="setup-back">${I.back}<span>Back</span></button>`}
-      <span class="step-count">Lift ${b.i + 1} of ${n}</span>
+      ${st.mode === 'baseline' && b.i === 0 && !b.single ? backLink('#you', 'You') : `<button class="back" type="button" data-act="setup-back">${I.back}<span>${b.single ? 'Your lifts' : 'Back'}</span></button>`}
+      ${b.single ? '' : `<span class="step-count">Lift ${b.i + 1} of ${n}</span>`}
     </div>
-    <div class="step-bar"><span style="width:${((b.i + 1) / n) * 100}%"></span></div>
+    ${b.single ? '' : `<div class="step-bar"><span style="width:${((b.i + 1) / n) * 100}%"></span></div>`}
     <form data-form="base" novalidate>
       <h1 class="title">${esc(l.name)}</h1>
-      <p class="muted">${b.i === 0 ? 'Your plan starts from how strong you are now. For each of these lifts, tell us a weight you can lift and how many reps you can do with it. Warm up first, and stop when your form slips. ' : ''}Pick a weight you can lift between 1 and 10 times with good form, and enter how many reps you can do.${l.each ? ' Enter the weight of one dumbbell.' : ''} If you could do more than 10, use a heavier weight.</p>
+      <p class="muted">${b.i === 0 && !b.single ? 'Your plan starts from how strong you are now. For each of these lifts, tell us a weight you can lift and how many reps you can do with it. Warm up first, and stop when your form slips. ' : ''}Pick a weight you can lift between 1 and 10 times with good form, and enter how many reps you can do.${l.each ? ' Enter the weight of one dumbbell.' : ''} If you could do more than 10, use a heavier weight.</p>
       ${ST.TEST_TIPS[l.id] ? `<p class="note">${I.alert} ${esc(ST.TEST_TIPS[l.id])}</p>` : ''}
       ${field('bweight', `Weight you can lift${l.each ? ' (each dumbbell)' : ''}`, numBox('bweight', dr.w, liftUnit()))}
       <fieldset class="field"><legend>How many reps can you do?</legend>${seg('breps', Array.from({ length: ST.MAX_TEST_REPS }, (_, k) => [k + 1, String(k + 1)]), dr.r)}</fieldset>
       ${st.error ? `<p class="error" role="alert">${esc(st.error)}</p>` : ''}
       <div class="form-actions">
-        <button class="btn btn-primary" type="submit">${b.i === n - 1 ? (st.mode === 'baseline' ? 'Save' : 'Make my plan') : 'Next'}</button>
+        <button class="btn btn-primary" type="submit">${b.single ? 'Save' : b.i === n - 1 ? (st.mode === 'baseline' ? 'Save' : 'Make my plan') : 'Next'}</button>
       </div>
     </form>
   </section>`;
+}
+
+// Your lifts, after set-up: tap one to change it
+function liftsView(st, lifts) {
+  const b = st.base;
+  const rows = lifts.map((l, i) => {
+    const t = b.tested[l.id];
+    const text = t ? `${fLift(t.weight)}${l.each ? ' each' : ''} × ${plural(t.reps, 'rep')}` : 'Not entered, so worked out from your other lifts';
+    return `<li><button class="row row-button" type="button" data-act="lift-edit" data-i="${i}"><span class="row-main"><span class="row-title">${esc(l.name)}</span><span class="fine">${esc(text)}</span></span>${I.next}</button></li>`;
+  }).join('');
+  return `${backLink('#you', 'You')}
+    <header class="screen-head"><div><h1 class="title">Your lifts</h1>${S.baseline ? `<p class="muted">Entered ${fmtDate(S.baseline.d, 'day')}</p>` : ''}</div></header>
+    ${lifts.length ? `<p class="muted">Got stronger, or entered a lift wrong? Tap it and change the weight or reps. New starting weights apply to exercises you haven’t logged yet. Exercises you already log carry on from your own numbers.</p>
+    ${st.error ? `<p class="error" role="alert">${esc(st.error)}</p>` : ''}
+    <section class="section"><ul class="list">${rows}</ul></section>` : '<p class="muted">Bodyweight-only plans have no weights to enter.</p>'}`;
 }
 
 function captureBaseForm(strict) {
@@ -2313,6 +2334,7 @@ const ACTIONS = {
       return;
     }
     if (st.phase === 'base') {
+      if (st.mode === 'baseline' && st.base.single) { st.base.i = -1; st.base.single = false; render(); return; }
       captureBaseForm(false);
       if (st.base.i > 0) st.base.i -= 1;
       else if (st.mode === 'new') { st.phase = 'parq'; st.parq.i = PQ.flow(st.parq.answers).list.length; } else { location.hash = '#you'; return; }
@@ -2369,6 +2391,15 @@ const ACTIONS = {
   'why-sets'(el) {
     const m = el.dataset.m;
     openSheet({ type: 'html', title: `${muscleName(m)}: ${S.program.weekly[m] || 0} sets a week`, html: `<p>${esc(whySets(S.program, m, S.profile))}</p>` });
+  },
+  'lift-edit'(el) {
+    const b = ui.setup?.base;
+    if (!b) return;
+    b.i = Number(el.dataset.i) || 0;
+    b.single = true;
+    b.draft = {};
+    ui.setup.error = '';
+    render();
   },
   swap(el) {
     openSheet({ type: 'swap', title: 'Swap exercise', sid: el.dataset.sid, ex: el.dataset.ex });
@@ -2857,6 +2888,20 @@ const FORMS = {
     const b = st.base;
     const lifts = ST.testLifts(st.draft.equipment);
     if (!captureBaseForm(true)) { render(); return; }
+    if (st.mode === 'baseline' && b.single) {
+      const t = today();
+      const name = lifts[b.i].name;
+      S.baseline = ST.makeBaseline(b.tested, S.profile, st.draft.kg, t);
+      S.changes.push({ d: t, kind: 'edit', items: [{ area: 'training', text: `${name} updated`, why: 'New starting weights apply to exercises you haven’t logged yet.' }] });
+      b.i = -1;
+      b.single = false;
+      b.draft = {};
+      weekCache = null;
+      save();
+      render();
+      toast(`${name} updated`);
+      return;
+    }
     if (b.i < lifts.length - 1) {
       b.i += 1;
       render();
